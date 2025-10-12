@@ -1,0 +1,30 @@
+# Build artifacts
+/build/
+/out/
+/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# IDE/editor files
+.vscode/
+*.code-workspace
+*.suo
+*.user
+*.ncb
+*.vcxproj.user
+*.log
+imgui.ini
+
+# vcpkg files
+/vcpkg_installed/
+vcpkg-configuration.json
+vcpkg.json
+
+# Generated data / API responses
+*.json
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
