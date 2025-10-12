@@ -5,6 +5,30 @@
 #include <vector>
 #include <fstream>
 
+/*
+SAMPLE JSON DATA FORMAT FROM StockData.org End Of Day DATA API:
+{
+    "meta": {
+        "date_from": "2023-03-18",
+        "date_to": "2023-09-14",
+        "max_period_days": 180
+    },
+    "data": [
+        {
+            "date": "2023-09-12T00:00:00.000Z",
+            "open": 179.49,
+            "high": 180.11,
+            "low": 174.84,
+            "close": 176.29,
+            "volume": 1454605
+        }, ...
+    ]
+}
+*/
+
+// Make a json alias
+using json = nlohmann::json;
+
 // create a stock ticker data type
 struct Tick {
     std::string date;
@@ -12,44 +36,49 @@ struct Tick {
     int volume;
 };
 
+// create a function that maps json data to a struct type
+std::vector<Tick> json_to_tickDataVector(json& jsonData) {
+    std::vector<Tick> tickDataVector;
+    const auto& data = jsonData.at("data");
+
+    for (int index = 0; index < data.size(); index++) {
+        const auto& tickEntry = data[index];
+        Tick tickdata;
+        tickEntry.at("date").get_to(tickdata.date);
+        tickEntry.at("open").get_to(tickdata.open);
+        tickEntry.at("high").get_to(tickdata.high);
+        tickEntry.at("low").get_to(tickdata.low);
+        tickEntry.at("close").get_to(tickdata.close);
+        tickEntry.at("volume").get_to(tickdata.volume);
+
+        tickDataVector.push_back(tickdata);
+    }
+
+    return tickDataVector;
+}
+
+void printData(std::vector<Tick>& tickDataVector) {
+    for (int index = 0; index < tickDataVector.size(); index++) {
+        fmt::print("The highest SPY price today on {} was: {}\n", tickDataVector[index].date, tickDataVector[index].high;
+    }
+}
+
 int main() {
-    const char* token_cstr = std::getenv("STOCKDATA_API_TOKEN");
-    if (!token_cstr) {
-        fmt::print("Error: Token not found.\n");
+    // Open and load a JSON file pertaining to SPY market data
+    std::ifstream file ("SPY_2025.json");
+    if (!file.is_open()) {
+        fmt::print("Error: failed to open file!\n");
         return 1;
     }
 
-    // Convert to std::string
-    std::string token(token_cstr);
+    // create an empty JSON object of nlohmann::json type
+    json jsonData;
+    // parse text from file into JSON structured object
+    file >> jsonData;
 
-    // Trim trailing whitespace/newlines
-    token.erase(token.find_last_not_of(" \n\r\t") + 1);
+    std::vector<Tick> tickDataVector = json_to_tickDataVector(jsonData);
 
-    // build and send a request to StockData from April 2025 to June 2025 (End Of Day Historical Data)
-    
-    std::string request = fmt::format("https://api.stockdata.org/v1/data/eod?symbols=AAPL&api_token={}&interval=day&sort=asc&date_from=2025-01-01", token);
-    fmt::print("Request url: {}\n", request);
-    cpr::Response apiResponse = cpr::Get(cpr::Url{request}, cpr::VerifySsl(false));
-
-    if (apiResponse.status_code != 200) {
-        fmt::print("Error: Failed to fetch data! Status code: {}", apiResponse.status_code);
-        fmt::print("Status: {}\nError: {}\nBody: {}\n", apiResponse.status_code, apiResponse.error.message, apiResponse.text);
-        return 1;
-    }
-
-    std::string filename = "AAPL_2025.json";
-    
-    // Create and write the API resposne to a file
-    std::ofstream out(filename);
-    if (!out) {
-        fmt::print("Error: Could not create file!");
-        return 1;
-    }
-
-    out << apiResponse.text;
-    out.close();
-
-    fmt::print("JSON saved to {}", filename);
+    printData(tickDataVector);
 
     return 0;
 }
