@@ -12,8 +12,14 @@ find_package(nlohmann_json CONFIG REQUIRED)
 
 add_subdirectory(third_party/imgui)
 
+include_directories(src/)
+
 add_executable(NikTrade
     src/main.cpp
+    src/core/data_loader.cpp
+    src/ui/core/init.cpp
+    src/ui/windows/main_window.cpp
+    src/ui/windows/dataDisplay_window.cpp
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_widgets.cpp
@@ -29,3 +35,4 @@ target_link_libraries(NikTrade PRIVATE glad::glad)
 target_link_libraries(NikTrade PRIVATE imgui)
 target_link_libraries(NikTrade PRIVATE cpr::cpr)
 target_link_libraries(NikTrade PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(NikTrade PRIVATE opengl32)

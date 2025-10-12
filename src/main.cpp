@@ -1,9 +1,17 @@
 #include <fmt/core.h>
-#include <cstdlib>
-#include <cpr/cpr.h>
-#include <nlohmann/json.hpp>
 #include <vector>
 #include <fstream>
+
+// core modules
+#include "core/tick.hpp"
+#include "core/data_loader.hpp"
+
+// UI modules
+#include "ui/core/init.hpp"
+#include "ui/windows/main_window.hpp"
+#include "ui/windows/dataDisplay_window.hpp"
+
+using json = nlohmann::json;
 
 /*
 SAMPLE JSON DATA FORMAT FROM StockData.org End Of Day DATA API:
@@ -26,59 +34,60 @@ SAMPLE JSON DATA FORMAT FROM StockData.org End Of Day DATA API:
 }
 */
 
-// Make a json alias
-using json = nlohmann::json;
-
-// create a stock ticker data type
-struct Tick {
-    std::string date;
-    double open, high, low, close;
-    int volume;
-};
-
-// create a function that maps json data to a struct type
-std::vector<Tick> json_to_tickDataVector(json& jsonData) {
-    std::vector<Tick> tickDataVector;
-    const auto& data = jsonData.at("data");
-
-    for (int index = 0; index < data.size(); index++) {
-        const auto& tickEntry = data[index];
-        Tick tickdata;
-        tickEntry.at("date").get_to(tickdata.date);
-        tickEntry.at("open").get_to(tickdata.open);
-        tickEntry.at("high").get_to(tickdata.high);
-        tickEntry.at("low").get_to(tickdata.low);
-        tickEntry.at("close").get_to(tickdata.close);
-        tickEntry.at("volume").get_to(tickdata.volume);
-
-        tickDataVector.push_back(tickdata);
-    }
-
-    return tickDataVector;
-}
-
+/* FOR DEBUGGING PURPOSES
 void printData(std::vector<Tick>& tickDataVector) {
     for (int index = 0; index < tickDataVector.size(); index++) {
-        fmt::print("The highest SPY price today on {} was: {}\n", tickDataVector[index].date, tickDataVector[index].high;
+        fmt::print("The highest SPY price today on {} was: {}\n", tickDataVector[index].date, tickDataVector[index].high);
     }
-}
+} */
 
 int main() {
-    // Open and load a JSON file pertaining to SPY market data
-    std::ifstream file ("SPY_2025.json");
+    // --------------------- Initialize window & UI ---------------------
+    GLFWwindow* window = initWindow(1000, 750, "NikTrade");
+    if (!window) return -1;
+
+    // --------------------- Load JSON market data ---------------------
+    std::ifstream file("SPY_2025.json");
     if (!file.is_open()) {
         fmt::print("Error: failed to open file!\n");
-        return 1;
+        return -1;
     }
 
     // create an empty JSON object of nlohmann::json type
     json jsonData;
     // parse text from file into JSON structured object
     file >> jsonData;
-
+    // get an array of individual tick data per EOD from the selected ticker
     std::vector<Tick> tickDataVector = json_to_tickDataVector(jsonData);
 
-    printData(tickDataVector);
+    // --------------------- Main loop ---------------------
+    while (!glfwWindowShouldClose(window)) {
+        startImGuiFrame(window);
+
+        // Get current window size
+        int width, height;
+        glfwGetWindowSize(window, &width, &height);
+
+        // --------- Actual ImGui Widget Layouts -------------
+        dataDisplayWindow(window, width, height, tickDataVector);
+        mainWindow(window, width, height);
+
+        // ---------- Rendering ----------
+        int fbWidth, fbHeight;
+        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+        glViewport(0, 0, fbWidth, fbHeight);
+
+        // Clear with transparent alpha
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        endImGuiFrame();
+        glfwSwapBuffers(window);
+    }
+
+    // --------------------- Cleanup ---------------------
+    shutdownUI(window);
+    fmt::print("Window has been terminated.\n");
 
     return 0;
 }
