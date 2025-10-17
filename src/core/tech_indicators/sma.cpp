@@ -5,7 +5,7 @@
 
 // SMA of n = (price_1 + price_2 + ... + price_n) / n
 
-std::vector<double> smaCalc(int sma_interval, std::vector<Tick>& ticker_data) { 
+std::vector<double> smaCalc(int sma_interval, const std::vector<Tick>& ticker_data) { 
     std::vector<double> sma_points; // holds SMA points at each new corresponding price
     // reserve memory for efficiency/performance
     sma_points.reserve(ticker_data.size() - sma_interval + 1);

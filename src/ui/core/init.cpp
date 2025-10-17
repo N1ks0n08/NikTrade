@@ -2,9 +2,9 @@
 #include <glad/glad.h> // GLAD COMES FIRST BEFORE GLFW AND WHATNOT
 #include "init.hpp" // CONTAINS GLFW
 #include <imgui.h>
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
+#include <implot.h>
 
 GLFWwindow* initWindow(int width, int height, const char* title) {
     /* Initialize the library: (REQUIRED BEFORE GLFW FUNCTIONS CAN BE USED) */
@@ -27,6 +27,8 @@ GLFWwindow* initWindow(int width, int height, const char* title) {
     /*Initialization of ImGui*/
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    ImPlot::CreateContext(); // SEPARATE ImPlot CONTEXT REQUIRED TO START
+
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
@@ -64,6 +66,7 @@ void shutdownUI(GLFWwindow* window) {
     /* Termination process */
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
+    ImPlot::DestroyContext(); // REQUIRED BEFORE ImGui CONTEXT DELETION
     ImGui::DestroyContext();
     glfwDestroyWindow(window);
     glfwTerminate();

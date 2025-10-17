@@ -17,6 +17,7 @@ include_directories(src/)
 add_executable(NikTrade
     src/main.cpp
     src/core/data_loader.cpp
+    src/core/tech_indicators/sma.cpp
     src/ui/core/init.cpp
     src/ui/windows/main_window.cpp
     src/ui/windows/dataDisplay_window.cpp
@@ -26,8 +27,11 @@ add_executable(NikTrade
     third_party/imgui/imgui_demo.cpp
     third_party/imgui/backends/imgui_impl_glfw.cpp
     third_party/imgui/backends/imgui_impl_opengl3.cpp
+    third_party/implot/implot.cpp
+    third_party/implot/implot_items.cpp
 )
 
+target_include_directories(NikTrade PRIVATE third_party/implot)
 
 target_link_libraries(NikTrade PRIVATE fmt::fmt)
 target_link_libraries(NikTrade PRIVATE glfw)
@@ -36,3 +40,4 @@ target_link_libraries(NikTrade PRIVATE imgui)
 target_link_libraries(NikTrade PRIVATE cpr::cpr)
 target_link_libraries(NikTrade PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(NikTrade PRIVATE opengl32)
+target_link_directories(NikTrade PRIVATE third_party/implot)

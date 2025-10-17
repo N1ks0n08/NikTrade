@@ -1,6 +1,8 @@
 #include "dataDisplay_window.hpp"
 #include <imgui.h>
+#include <implot.h>
 #include <vector>
+#include <core/tech_indicators/sma.hpp>
 
 void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, std::vector<Tick>& tickDataVector) {
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
@@ -12,8 +14,8 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
 
     if (ImGui::Begin("SPY 2025 EOD Data Graph", nullptr,
         ImGuiWindowFlags_NoCollapse |
-        ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_AlwaysAutoResize))
+        ImGuiWindowFlags_NoSavedSettings))
+        // | ImGuiWindowFlags_AlwaysAutoResize)) Not in use for now
     {
         ImGui::Text("Animated SPY Price Graph (YTD)");
 
@@ -23,6 +25,44 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
             ImGui::PopStyleColor(2);
             return;
         }
+
+        // Compute SMA (e.g., 20-day moving average)
+        std::vector<double> smaValues = smaCalc(10, tickDataVector);
+
+        // -------------------------------
+        // Prepare X/Y arrays for ImPlot
+        // -------------------------------
+        std::vector<double> xValues(tickDataVector.size());
+        std::vector<double> yValues(tickDataVector.size());
+        for (size_t i = 0; i < tickDataVector.size(); ++i) {
+            xValues[i] = static_cast<double>(i);
+            yValues[i] = tickDataVector[i].close;
+        }
+
+        // Time-based frame update (¼ speed)
+        static double lastUpdate = 0.0;
+        static int currentFrame = 0;
+        double now = ImGui::GetTime();
+
+        if (now - lastUpdate > 0.066) { // ~15 FPS
+            currentFrame = (currentFrame + 1) % (int)tickDataVector.size();
+            lastUpdate = now;
+        }
+
+        // -------------------------------
+        // Plot with ImPlot:
+        // Price + SMA
+        // -------------------------------
+        if (ImPlot::BeginPlot("Price Plot", "Time", "Price", ImVec2(-1, 300))) {
+            ImPlot::SetupAxesLimits(0, tickDataVector.size() - 1, 0, *std::max_element(yValues.begin(), yValues.end()));
+            ImPlot::PlotLine("SPY Close", xValues.data(), yValues.data(), currentFrame);
+            ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), 2.0f); // different style for SMA: red, 2px
+            if (!smaValues.empty())
+                ImPlot::PlotLine("20-day SMA", xValues.data(), smaValues.data(), currentFrame);
+            ImPlot::EndPlot();
+        }
+
+        /*
 
         // Get drawlist + current window position
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
@@ -63,6 +103,7 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
 
         // Maintain spacing
         ImGui::Dummy(canvas_size);
+        */
     }
 
     ImGui::End();
