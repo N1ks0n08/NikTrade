@@ -18,6 +18,7 @@ add_executable(NikTrade
     src/main.cpp
     src/core/data_loader.cpp
     src/core/tech_indicators/sma.cpp
+    src/core/tech_indicators/ema.cpp
     src/ui/core/init.cpp
     src/ui/windows/main_window.cpp
     src/ui/windows/dataDisplay_window.cpp

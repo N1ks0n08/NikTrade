@@ -3,6 +3,7 @@
 #include <implot.h>
 #include <vector>
 #include <core/tech_indicators/sma.hpp>
+#include <core/tech_indicators/ema.hpp>
 
 void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, std::vector<Tick>& tickDataVector) {
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
@@ -26,8 +27,11 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
             return;
         }
 
-        // Compute SMA (e.g., 20-day moving average)
+        // Compute SMA, currently 10 day interval
         std::vector<double> smaValues = smaCalc(10, tickDataVector);
+
+        // Compute EMA, currently 10 day interval
+        std::vector<double> emaValues = emaCalc(10, tickDataVector);
 
         // -------------------------------
         // Prepare X/Y arrays for ImPlot
@@ -51,59 +55,43 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
 
         // -------------------------------
         // Plot with ImPlot:
-        // Price + SMA
+        // Price + SMA + EMA
         // -------------------------------
         if (ImPlot::BeginPlot("Price Plot", "Time", "Price", ImVec2(-1, 300))) {
-            ImPlot::SetupAxesLimits(0, tickDataVector.size() - 1, 0, *std::max_element(yValues.begin(), yValues.end()));
+            double yMax = *std::max_element(yValues.begin(), yValues.end());
+
+            // Constrain the X axis: can’t scroll left of 0, but user can zoom/pan right freely
+            ImPlot::SetupAxisLimits(ImAxis_X1, 0, tickDataVector.size() - 1, ImPlotCond_Always);
+
+            // Y axis: start at 0, allow zoom/pan up, but clamp minimum to 0
+            ImPlot::SetupAxisLimits(ImAxis_Y1, 0, yMax, ImPlotCond_Once);
+            ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, 0, FLT_MAX); // 0 = min, FLT_MAX = no upper limit
+
+            // DO NOT call SetupAxesLimits() or SetupFinish() here.
+            // Those are deprecated and cause the PopID() imbalance.
+
+            int lookback = 10;
+
+            // Plot SPY close (black line)
+            ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), 2.0f);
             ImPlot::PlotLine("SPY Close", xValues.data(), yValues.data(), currentFrame);
-            ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), 2.0f); // different style for SMA: red, 2px
-            if (!smaValues.empty())
-                ImPlot::PlotLine("20-day SMA", xValues.data(), smaValues.data(), currentFrame);
-            ImPlot::EndPlot();
+
+            // Plot SMA (red line)
+            if (!smaValues.empty() && currentFrame > lookback) {
+                ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 2.0f);
+                size_t visibleCount = std::min<size_t>(smaValues.size(), currentFrame - lookback);
+                ImPlot::PlotLine("10-day SMA", &xValues[lookback], smaValues.data(), visibleCount);
+            }
+
+            // Plot EMA (blue line)
+            if (!emaValues.empty() && currentFrame > lookback) {
+                ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), 2.0f);
+                size_t visibleCount = std::min<size_t>(emaValues.size(), currentFrame - lookback);
+                ImPlot::PlotLine("10-day EMA", &xValues[lookback], emaValues.data(), visibleCount);
+            }
+
+            ImPlot::EndPlot(); // always must match BeginPlot
         }
-
-        /*
-
-        // Get drawlist + current window position
-        ImDrawList* draw_list = ImGui::GetWindowDrawList();
-        ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();
-        ImVec2 canvas_size = ImVec2(850, 300);
-        ImVec2 canvas_p1 = ImVec2(canvas_p0.x + canvas_size.x, canvas_p0.y + canvas_size.y);
-
-        // Draw background (white)
-        draw_list->AddRectFilled(canvas_p0, canvas_p1, IM_COL32(255, 255, 255, 255));
-        draw_list->AddRect(canvas_p0, canvas_p1, IM_COL32(200, 200, 200, 255)); // grey border
-
-        // Time-based frame update (¼ speed)
-        static double lastUpdate = 0.0;
-        static int currentFrame = 0;
-        double now = ImGui::GetTime();
-
-        // Update roughly every 1/15th second instead of every frame (~4x slower)
-        if (now - lastUpdate > 0.066) { // 0.066s ≈ 15 FPS
-            currentFrame = (currentFrame + 1) % (int)tickDataVector.size();
-            lastUpdate = now;
-        }
-
-        // Compute max price for Y scaling
-        double maxPrice = 0.0;
-        for (const auto& tick : tickDataVector)
-            if (tick.close > maxPrice) maxPrice = tick.close;
-
-        // Draw line up to current frame
-        const ImU32 lineColor = IM_COL32(46, 140, 230, 255); // same blue as title bar
-        for (int i = 1; i < currentFrame; ++i) {
-            float x0 = canvas_p0.x + (i - 1) * (canvas_size.x / (float)tickDataVector.size());
-            float y0 = canvas_p1.y - (float)((tickDataVector[i - 1].close / maxPrice) * canvas_size.y);
-            float x1 = canvas_p0.x + i * (canvas_size.x / (float)tickDataVector.size());
-            float y1 = canvas_p1.y - (float)((tickDataVector[i].close / maxPrice) * canvas_size.y);
-
-            draw_list->AddLine(ImVec2(x0, y0), ImVec2(x1, y1), lineColor, 2.0f);
-        }
-
-        // Maintain spacing
-        ImGui::Dummy(canvas_size);
-        */
     }
 
     ImGui::End();

@@ -1,6 +1,6 @@
 #include <core/tick.hpp>
 #include <vector>
-#include <string>
+//#include <string>
 #include <fmt/core.h>
 
 // SMA of n = (price_1 + price_2 + ... + price_n) / n
@@ -13,7 +13,7 @@ std::vector<double> smaCalc(int sma_interval, const std::vector<Tick>& ticker_da
     // check for edge case
     // Avoid divide by zero edge case or an not calculable SMA
     if (sma_interval == 0) {
-        fmt::print("Error: Divide by zero!");
+        fmt::print("Error: SMA interval of 0 not allowed!");
         return sma_points;
     }
     // Avoid calculatoin of indeterminate SMAs
@@ -28,6 +28,11 @@ std::vector<double> smaCalc(int sma_interval, const std::vector<Tick>& ticker_da
         rolling_sum += ticker_data[iterator].close;
     }
     sma_points.push_back(rolling_sum / sma_interval);
+
+    // check if the SMA interval is equal to the dataset size and avoid out-of-bounds error:
+    if (ticker_data.size() == sma_interval) {
+        return sma_points;
+    }
     
     // iteratively calculate the new SMA at every new data point
     for (size_t iterator = sma_interval; iterator < ticker_data.size(); iterator++) {
