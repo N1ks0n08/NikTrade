@@ -1,5 +1,4 @@
 #include "ema.hpp"
-#include "sma.hpp"
 #include <fmt/core.h>
 
 // EMA_t = a * P_t + (1 - a) * EMA_t-1

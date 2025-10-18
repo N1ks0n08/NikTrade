@@ -4,6 +4,7 @@
 #include <vector>
 #include <core/tech_indicators/sma.hpp>
 #include <core/tech_indicators/ema.hpp>
+#include <core/tech_indicators/rsi.hpp>
 
 void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, std::vector<Tick>& tickDataVector) {
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
@@ -33,6 +34,9 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
         // Compute EMA, currently 10 day interval
         std::vector<double> emaValues = emaCalc(10, tickDataVector);
 
+        // Compute RSI, currently 10 day interval
+        std::vector<double> rsiValues = rsiCalc(10, tickDataVector);
+
         // -------------------------------
         // Prepare X/Y arrays for ImPlot
         // -------------------------------
@@ -55,7 +59,7 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
 
         // -------------------------------
         // Plot with ImPlot:
-        // Price + SMA + EMA
+        // Price + SMA + EMA + RSI
         // -------------------------------
         if (ImPlot::BeginPlot("Price Plot", "Time", "Price", ImVec2(-1, 300))) {
             double yMax = *std::max_element(yValues.begin(), yValues.end());
@@ -88,6 +92,13 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
                 ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), 2.0f);
                 size_t visibleCount = std::min<size_t>(emaValues.size(), currentFrame - lookback);
                 ImPlot::PlotLine("10-day EMA", &xValues[lookback], emaValues.data(), visibleCount);
+            }
+
+            // Plot RSI (green line)
+            if (!rsiValues.empty() && currentFrame > lookback) {
+                ImPlot::SetNextLineStyle(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), 2.0f);
+                size_t visibleCount = std::min<size_t>(rsiValues.size(), currentFrame - lookback);
+                ImPlot::PlotLine("10-day RSI", &xValues[lookback], rsiValues.data(), visibleCount);
             }
 
             ImPlot::EndPlot(); // always must match BeginPlot
