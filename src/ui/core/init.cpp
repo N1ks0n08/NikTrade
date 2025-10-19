@@ -1,5 +1,5 @@
 #include <fmt/core.h>
-#include <glad/glad.h> // GLAD COMES FIRST BEFORE GLFW AND WHATNOT
+#include <glad.h> // GLAD COMES FIRST BEFORE GLFW AND WHATNOT
 #include "init.hpp" // CONTAINS GLFW
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
