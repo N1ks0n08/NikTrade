@@ -5,6 +5,7 @@
 #include <core/tech_indicators/sma.hpp>
 #include <core/tech_indicators/ema.hpp>
 #include <core/tech_indicators/rsi.hpp>
+#include <core/tech_indicators/macd.hpp>
 
 void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, std::vector<Tick>& tickDataVector) {
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
@@ -37,6 +38,10 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
         // Compute RSI, currently 10 day interval
         std::vector<double> rsiValues = rsiCalc(10, tickDataVector);
 
+        // Compute MACD, currently at:
+        // Fast EMA: 12, Slow EMA: 26, Signal EMA: 9
+        MACDResult macd_values = macdCalc(12, 26, 9, tickDataVector);
+
         // -------------------------------
         // Prepare X/Y arrays for ImPlot
         // -------------------------------
@@ -57,51 +62,97 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
             lastUpdate = now;
         }
 
+        // Combined Subplots for Price, RSI, and MACD
         // -------------------------------
-        // Plot with ImPlot:
-        // Price + SMA + EMA + RSI
-        // -------------------------------
-        if (ImPlot::BeginPlot("Price Plot", "Time", "Price", ImVec2(-1, 300))) {
-            double yMax = *std::max_element(yValues.begin(), yValues.end());
+        if (ImPlot::BeginSubplots("SPY Indicator Dashboard", 3, 1, ImVec2(-1, 600),
+            ImPlotSubplotFlags_LinkAllX | ImPlotSubplotFlags_NoResize)) {
 
-            // Constrain the X axis: can’t scroll left of 0, but user can zoom/pan right freely
-            ImPlot::SetupAxisLimits(ImAxis_X1, 0, tickDataVector.size() - 1, ImPlotCond_Always);
+            // ---------- PRICE PLOT ----------
+            if (ImPlot::BeginPlot("Price", "Time", "Price", ImVec2(-1, 0))) {
+                double yMax = *std::max_element(yValues.begin(), yValues.end());
+                ImPlot::SetupAxisLimits(ImAxis_X1, 0, tickDataVector.size() - 1, ImPlotCond_Always);
+                ImPlot::SetupAxisLimits(ImAxis_Y1, 0, yMax, ImPlotCond_Once);
 
-            // Y axis: start at 0, allow zoom/pan up, but clamp minimum to 0
-            ImPlot::SetupAxisLimits(ImAxis_Y1, 0, yMax, ImPlotCond_Once);
-            ImPlot::SetupAxisLimitsConstraints(ImAxis_Y1, 0, FLT_MAX); // 0 = min, FLT_MAX = no upper limit
+                int lookback = 10;
 
-            // DO NOT call SetupAxesLimits() or SetupFinish() here.
-            // Those are deprecated and cause the PopID() imbalance.
+                // Plot SPY close (black)
+                ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), 2.0f);
+                ImPlot::PlotLine("SPY Close", xValues.data(), yValues.data(), currentFrame);
 
-            int lookback = 10;
+                // Plot SMA (red)
+                if (!smaValues.empty() && currentFrame > lookback) {
+                    size_t visibleCount = std::min<size_t>(smaValues.size(), currentFrame - lookback);
+                    ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 2.0f);
+                    ImPlot::PlotLine("10-day SMA", &xValues[lookback], smaValues.data(), visibleCount);
+                }
 
-            // Plot SPY close (black line)
-            ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), 2.0f);
-            ImPlot::PlotLine("SPY Close", xValues.data(), yValues.data(), currentFrame);
+                // Plot EMA (blue)
+                if (!emaValues.empty() && currentFrame > lookback) {
+                    size_t visibleCount = std::min<size_t>(emaValues.size(), currentFrame - lookback);
+                    ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), 2.0f);
+                    ImPlot::PlotLine("10-day EMA", &xValues[lookback], emaValues.data(), visibleCount);
+                }
 
-            // Plot SMA (red line)
-            if (!smaValues.empty() && currentFrame > lookback) {
-                ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 2.0f);
-                size_t visibleCount = std::min<size_t>(smaValues.size(), currentFrame - lookback);
-                ImPlot::PlotLine("10-day SMA", &xValues[lookback], smaValues.data(), visibleCount);
+                ImPlot::EndPlot();
             }
 
-            // Plot EMA (blue line)
-            if (!emaValues.empty() && currentFrame > lookback) {
-                ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), 2.0f);
-                size_t visibleCount = std::min<size_t>(emaValues.size(), currentFrame - lookback);
-                ImPlot::PlotLine("10-day EMA", &xValues[lookback], emaValues.data(), visibleCount);
+            // ---------- RSI PLOT ----------
+            if (ImPlot::BeginPlot("RSI", nullptr, "RSI", ImVec2(-1, 0))) {
+                int lookback = 10;
+                if (!rsiValues.empty() && currentFrame > lookback) {
+                    int data_size = std::min<int>(currentFrame - lookback, static_cast<int>(rsiValues.size() - lookback));
+                    std::vector<double> x(data_size);
+                    for (int i = 0; i < data_size; ++i) x[i] = lookback + i;
+
+                    // RSI line
+                    ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.8f, 0.0f, 1.0f), 2.0f);
+                    ImPlot::PlotLine("RSI", x.data(), rsiValues.data() + lookback, data_size);
+
+                    // Thresholds (70 / 30)
+                    std::vector<double> overbought(data_size, 70.0);
+                    std::vector<double> oversold(data_size, 30.0);
+                    ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.0f, 0.0f, 0.0f, 0.5f));
+                    ImPlot::PlotLine("Overbought", x.data(), overbought.data(), data_size);
+                    ImPlot::PopStyleColor();
+
+                    ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(0.0f, 0.0f, 1.0f, 0.5f));
+                    ImPlot::PlotLine("Oversold", x.data(), oversold.data(), data_size);
+                    ImPlot::PopStyleColor();
+                }
+                ImPlot::EndPlot();
             }
 
-            // Plot RSI (green line)
-            if (!rsiValues.empty() && currentFrame > lookback) {
-                ImPlot::SetNextLineStyle(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), 2.0f);
-                size_t visibleCount = std::min<size_t>(rsiValues.size(), currentFrame - lookback);
-                ImPlot::PlotLine("10-day RSI", &xValues[lookback], rsiValues.data(), visibleCount);
+            // ---------- MACD PLOT ----------
+            if (ImPlot::BeginPlot("MACD", "Time", "MACD", ImVec2(-1, 0))) {
+                const auto& macd = macd_values.macd;
+                const auto& signal = macd_values.signal;
+                const auto& hist = macd_values.histogram;
+                size_t total_size = std::min({ macd.size(), signal.size(), hist.size() });
+
+                int lookback = 10;
+                if (total_size > 0 && currentFrame > lookback) {
+                    int data_size = std::min<int>(currentFrame - lookback, static_cast<int>(total_size - lookback));
+
+                    std::vector<double> x(data_size);
+                    for (int i = 0; i < data_size; ++i)
+                        x[i] = lookback + i;
+
+                    // MACD Line
+                    ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 2.0f);
+                    ImPlot::PlotLine("MACD Line", x.data(), macd.data() + lookback, data_size);
+
+                    // Signal Line
+                    ImPlot::SetNextLineStyle(ImVec4(0.2f, 0.2f, 1.0f, 1.0f), 2.0f);
+                    ImPlot::PlotLine("Signal Line", x.data(), signal.data() + lookback, data_size);
+
+                    // Histogram
+                    ImPlot::PlotBars("Histogram", x.data(), hist.data() + lookback, data_size, 0.5);
+                }
+
+                ImPlot::EndPlot();
             }
 
-            ImPlot::EndPlot(); // always must match BeginPlot
+            ImPlot::EndSubplots();
         }
     }
 

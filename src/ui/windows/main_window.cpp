@@ -46,11 +46,6 @@ void mainWindow(GLFWwindow* window, int windowWidth, int windowHeight) {
                                         win_pos.y + barHeight + ImGui::GetStyle().WindowPadding.y));
     }
 
-    // Example content
-    ImGui::Text("Window content here...");
-    ImGui::Dummy(ImVec2(0.0f, 150.0f));
-    ImGui::Text("Rounded corners + custom bar ✅");
-
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
