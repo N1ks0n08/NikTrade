@@ -68,8 +68,10 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
 
         // Combined Subplots for Price, RSI, and MACD
         // -------------------------------
-        if (ImPlot::BeginSubplots("SPY Indicator Dashboard", 3, 1, ImVec2(-1, 600),
-            ImPlotSubplotFlags_LinkAllX | ImPlotSubplotFlags_NoResize)) {
+        ImVec2 windowSize = ImGui::GetContentRegionAvail();
+        float rowRatios[] = { 0.6f, 0.2f, 0.2f };
+        if (ImPlot::BeginSubplots("SPY Indicator Dashboard", 3, 1, ImVec2(windowSize.x, windowSize.y),
+            ImPlotSubplotFlags_LinkAllX, nullptr, rowRatios)) {
 
             // ---------- PRICE PLOT ----------
             if (ImPlot::BeginPlot("Price", "Time", "Price", ImVec2(-1, 0))) {
