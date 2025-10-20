@@ -6,6 +6,7 @@
 #include <core/tech_indicators/ema.hpp>
 #include <core/tech_indicators/rsi.hpp>
 #include <core/tech_indicators/macd.hpp>
+#include <core/tech_indicators/vwap.hpp>
 
 void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, std::vector<Tick>& tickDataVector) {
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
@@ -41,6 +42,9 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
         // Compute MACD, currently at:
         // Fast EMA: 12, Slow EMA: 26, Signal EMA: 9
         MACDResult macd_values = macdCalc(12, 26, 9, tickDataVector);
+
+        // Compute VWAP
+        std::vector<double> vwap_values = vwapCalc(tickDataVector);
 
         // -------------------------------
         // Prepare X/Y arrays for ImPlot
@@ -91,6 +95,13 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
                     size_t visibleCount = std::min<size_t>(emaValues.size(), currentFrame - lookback);
                     ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), 2.0f);
                     ImPlot::PlotLine("10-day EMA", &xValues[lookback], emaValues.data(), visibleCount);
+                }
+
+                // Plot VWAP (purple)
+                if (!vwap_values.empty() && currentFrame > lookback) {
+                    size_t visibleCount = std::min<size_t>(vwap_values.size(), currentFrame - lookback);
+                    ImPlot::SetNextLineStyle(ImVec4(0.5f, 0.0f, 0.5f, 1.0f), 2.0f);
+                    ImPlot::PlotLine("VWAP", &xValues[lookback], vwap_values.data(), visibleCount);
                 }
 
                 ImPlot::EndPlot();
