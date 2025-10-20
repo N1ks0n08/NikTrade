@@ -91,3 +91,20 @@ int main() {
 
     return 0;
 }
+
+
+// --------------------- Windows GUI subsystem wrapper ---------------------
+#ifdef _WIN32
+#ifdef WIN32
+#include <windows.h>
+
+// This wrapper allows your main() to work even in WIN32 (GUI) subsystem builds
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+{
+    // MSVC provides __argc and __argv for the console-style arguments
+    return main(); // no need to add __argc, __argv for now!
+}
+#endif
+#endif
+// -------------------------------------------------------------------------
+

@@ -44,8 +44,8 @@ void mainWindow(GLFWwindow* window, int windowWidth, int windowHeight) {
         // Offset content below the bar
         ImGui::SetCursorScreenPos(ImVec2(win_pos.x + ImGui::GetStyle().WindowPadding.x,
                                         win_pos.y + barHeight + ImGui::GetStyle().WindowPadding.y));
+        ImGui::Dummy(ImVec2(0,0)); // Dummy is required for now; or else the SetCursorScreenPos will crash the applicatoin
     }
-
     ImGui::End();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();

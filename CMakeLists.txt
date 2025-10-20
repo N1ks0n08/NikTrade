@@ -14,13 +14,14 @@ add_subdirectory(third_party/imgui)
 
 include_directories(src/)
 
-add_executable(NikTrade
+add_executable(NikTrade 
     src/main.cpp
     src/core/data_loader.cpp
     src/core/tech_indicators/sma.cpp
     src/core/tech_indicators/ema.cpp
     src/core/tech_indicators/rsi.cpp
     src/core/tech_indicators/macd.cpp
+    src/core/tech_indicators/vwap.cpp
     src/ui/core/init.cpp
     src/ui/windows/main_window.cpp
     src/ui/windows/dataDisplay_window.cpp
@@ -33,6 +34,12 @@ add_executable(NikTrade
     third_party/implot/implot.cpp
     third_party/implot/implot_items.cpp
 )
+
+if(MSVC)
+    set_target_properties(NikTrade PROPERTIES
+        LINK_FLAGS "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
+    )
+endif()
 
 target_include_directories(NikTrade PRIVATE third_party/implot)
 
