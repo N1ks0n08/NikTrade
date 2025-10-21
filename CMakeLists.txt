@@ -26,6 +26,11 @@ add_executable(NikTrade
     src/ui/core/init.cpp
     src/ui/windows/main_window.cpp
     src/ui/windows/dataDisplay_window.cpp
+    src/ui/plots/price_plot.cpp
+    src/ui/plots/sma_plot.cpp
+    src/ui/plots/ema_plot.cpp
+    src/ui/plots/vwap_plot.cpp
+    src/ui/backtest_plots/sma_crossover_plot.cpp
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
     third_party/imgui/imgui_widgets.cpp

@@ -2,11 +2,16 @@
 #include <imgui.h>
 #include <implot.h>
 #include <vector>
-#include <core/tech_indicators/sma.hpp>
-#include <core/tech_indicators/ema.hpp>
-#include <core/tech_indicators/rsi.hpp>
-#include <core/tech_indicators/macd.hpp>
-#include <core/tech_indicators/vwap.hpp>
+#include <algorithm>
+#include "ui/plots/price_plot.hpp"
+#include "ui/plots/sma_plot.hpp"
+#include "ui/plots/ema_plot.hpp"
+#include "ui/plots/vwap_plot.hpp"
+#include "ui/backtest_plots/sma_crossover_plot.hpp" // UTILIZED TO PLOT THE SMA CROSSOVER BACKTEST VECTOR
+#include "core/tech_indicators/rsi.hpp"
+#include "core/tech_indicators/macd.hpp"
+#include "core/backtest_engines/Trade.hpp"
+#include "core/backtest_engines/sma_crossover.hpp" // UTILIZED TO GET THE SMA CROSSOVER BACKTEST VECTOR
 
 void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, std::vector<Tick>& tickDataVector) {
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
@@ -30,11 +35,14 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
             return;
         }
 
-        // Compute SMA, currently 10 day interval
-        std::vector<double> smaValues = smaCalc(10, tickDataVector);
 
-        // Compute EMA, currently 10 day interval
-        std::vector<double> emaValues = emaCalc(10, tickDataVector);
+        // ------BACKTEST SECTION ------------
+        int fastSMAPeriod = 10;
+        int slowSMAPeriod = 50;
+        double startingCapital = 50000;
+        std::vector<double> slowSMAValues = smaCalc(slowSMAPeriod, tickDataVector);
+        // ------BACKTEST SECTION-------------
+        std::vector<Trade> tradeVector = sma_crossover_result(fastSMAPeriod, slowSMAPeriod, startingCapital, tickDataVector);
 
         // Compute RSI, currently 10 day interval
         std::vector<double> rsiValues = rsiCalc(10, tickDataVector);
@@ -71,40 +79,25 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
         ImVec2 windowSize = ImGui::GetContentRegionAvail();
         float rowRatios[] = { 0.6f, 0.2f, 0.2f };
         if (ImPlot::BeginSubplots("SPY Indicator Dashboard", 3, 1, ImVec2(windowSize.x, windowSize.y),
-            ImPlotSubplotFlags_LinkAllX, nullptr, rowRatios)) {
-
-            // ---------- PRICE PLOT ----------
+            0, nullptr, rowRatios)) {
+            // ---------- PRICE + FAST/SLOW SMA + EMA + VWAP --------------//
             if (ImPlot::BeginPlot("Price", "Time", "Price", ImVec2(-1, 0))) {
-                double yMax = *std::max_element(yValues.begin(), yValues.end());
-                ImPlot::SetupAxisLimits(ImAxis_X1, 0, tickDataVector.size() - 1, ImPlotCond_Always);
-                ImPlot::SetupAxisLimits(ImAxis_Y1, 0, yMax, ImPlotCond_Once);
 
-                int lookback = 10;
+                // Plot the stock price
+                plotPrice(tickDataVector, currentFrame);
+                
+                // Plot SMAs
+                plotSMA(tickDataVector, 10, currentFrame, "10-day SMA", ImVec4(1,0,0,1));
+                plotSMA(tickDataVector, 50, currentFrame, "50-day SMA", ImVec4(1,0.5f,0,1));
 
-                // Plot SPY close (black)
-                ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 0.0f, 1.0f), 2.0f);
-                ImPlot::PlotLine("SPY Close", xValues.data(), yValues.data(), currentFrame);
+                // Plot EMA
+                plotEMA(tickDataVector, 10, currentFrame, "EMA", ImVec4(0,0,1,1));
 
-                // Plot SMA (red)
-                if (!smaValues.empty() && currentFrame > lookback) {
-                    size_t visibleCount = std::min<size_t>(smaValues.size(), currentFrame - lookback);
-                    ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), 2.0f);
-                    ImPlot::PlotLine("10-day SMA", &xValues[lookback], smaValues.data(), visibleCount);
-                }
+                // Plot VWAP
+                plotVWAP(tickDataVector, currentFrame, "VWAP", ImVec4(0.5f,0,0.5f,1));
 
-                // Plot EMA (blue)
-                if (!emaValues.empty() && currentFrame > lookback) {
-                    size_t visibleCount = std::min<size_t>(emaValues.size(), currentFrame - lookback);
-                    ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.0f, 1.0f, 1.0f), 2.0f);
-                    ImPlot::PlotLine("10-day EMA", &xValues[lookback], emaValues.data(), visibleCount);
-                }
-
-                // Plot VWAP (purple)
-                if (!vwap_values.empty() && currentFrame > lookback) {
-                    size_t visibleCount = std::min<size_t>(vwap_values.size(), currentFrame - lookback);
-                    ImPlot::SetNextLineStyle(ImVec4(0.5f, 0.0f, 0.5f, 1.0f), 2.0f);
-                    ImPlot::PlotLine("VWAP", &xValues[lookback], vwap_values.data(), visibleCount);
-                }
+                // Plot SMA Crossover Trades (BUY/SELL markers)
+                plotSMACrossoverTrades(tickDataVector, tradeVector, currentFrame);
 
                 ImPlot::EndPlot();
             }
@@ -115,7 +108,7 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
                 if (!rsiValues.empty() && currentFrame > lookback) {
                     int data_size = std::min<int>(currentFrame - lookback, static_cast<int>(rsiValues.size() - lookback));
                     std::vector<double> x(data_size);
-                    for (int i = 0; i < data_size; ++i) x[i] = lookback + i;
+                    for (int i = 0; i < data_size; ++i) x[i] = lookback + i + 1;
 
                     // RSI line
                     ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.8f, 0.0f, 1.0f), 2.0f);
@@ -148,7 +141,7 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
 
                     std::vector<double> x(data_size);
                     for (int i = 0; i < data_size; ++i)
-                        x[i] = lookback + i;
+                        x[i] = lookback + i + 1;
 
                     // MACD Line
                     ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 2.0f);
