@@ -38,6 +38,8 @@ std::vector<Trade> sma_crossover_result(int& fastSMAPeriod, int& slowSMAPeriod, 
 
         // Safety check
         if (day + 1 >= ticker_data.size() || fastIndex >= fastSMA.size()) {
+            // day + 1 >= ticker_data.size() checks for trying to access the open price of the next day after the last available market data
+            // fastIndex >= fastSMA.size() checks for if we try to access the index over the fastSMA's maximum size
             break;
         }
 
