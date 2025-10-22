@@ -14,7 +14,7 @@
 bool bullishMACDSignal (MACDResult& macd_values) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bullish sign:
-    
+
 }
 
 bool bullishVWAPSignal (std::vector<double>& vwap_values) {
@@ -56,7 +56,7 @@ optimizer_result getOptimizerResult (int& fastEMAPeriod, int& slowEMAPeriod, int
     MACDResult macd_values = macdCalc(fastEMAPeriod, slowEMAPeriod, signalPeriod, tickerData);
     std::vector<double> vwap_values = vwapCalc(tickerData);
 
-
+    // BACKTEST LOGIC 1:
     //this engine starts on the same day ALL vectors are first available,
     // which means the start of the slowEMA period as it starts the latest.
     // Therefore, I must offset the start indexes of the other vectors as well:
@@ -76,6 +76,7 @@ optimizer_result getOptimizerResult (int& fastEMAPeriod, int& slowEMAPeriod, int
     // slowEMA index STARTS @: current_day - 40 (subtract 40 days since the slowEMA starts on day 40)
     // fastEMA index STARTS @: current_day - 20 (subtract 20 days since the fastEMA starts on day 20)
 
+    // BACKTEST LOGIC 2:
     // In order to execute trades,
     // (ssuming current_day is the iteration through the slowEMA period,
     // tickerData[current_day + 1] MUST EXIST
@@ -85,6 +86,13 @@ optimizer_result getOptimizerResult (int& fastEMAPeriod, int& slowEMAPeriod, int
     // therefore, the signal occurs on current_day
     // and the trade MUST EXECUTE ON current_day + 1
 
+    // BACKTEST LOGIC 3:
+    // In addition to the previous logic, persistent bullish signals must also be held.
+    // For instance, MACD may be bullish on day 50, but VWAP may not be bullish until day 53
+    // (vice versa; VWAP may be bullish on day 50, but MACD may not be bullish until day 53)
+    // The same is true for bearish signals.
+    // Hence, I must account for this delay between bullish signals
+    // THE SAME APPLIES FOR BEARISH CIRCUMSTANCES AS WELL
 
 
     return optimizer_result;
