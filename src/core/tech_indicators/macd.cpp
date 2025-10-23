@@ -112,5 +112,13 @@ MACDResult macdCalc(int fast_EMA_period, int slow_EMA_period, int signal_period,
     // Reserve and set the histogram vector into the MACDResult object:
     macd_result.histogram = histogramCalculator(macd_result.macd, macd_result.signal);
 
+    // FOR UI PURPOSES:
+    // THE FINAL DAY AT WHICH MACD, SIGNAL, and HISTOGRAM VALUES ARE ALL AVAILABLE:
+    // slowEMA period of MACD calculation: 26
+    // therefore 25 days after day 1 of reading data, MACD starts
+    // however, signal period is of preoid 9
+    // and as such signal period becomes available after 8 days
+    // hence:
+    // starting_day = current_day + (slowEMAPeriod - 1) + (signal_Period - 1)
     return macd_result;
 }

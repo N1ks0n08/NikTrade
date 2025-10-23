@@ -11,46 +11,66 @@
 
 // Bulllish MACD signal: MACD line crosses above the Signal line
 // Bullish VWAP signal: price crosses above the VWAP line (buyers acceptingp rices )
-bool bullishMACDSignal (MACDResult& macd_values) {
+bool bullishMACDSignal (MACDResult& macd_values, size_t iteration) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bullish sign:
-    return true;
+    if (macd_values.macd[iteration - 1] <= macd_values.signal[iteration - 1]
+            && macd_values.macd[iteration] > macd_values.signal[iteration]) {
+                return true;
+    } else {
+        return false;
+    }
 }
 
-bool bullishVWAPSignal (std::vector<double>& vwap_values) {
+bool bullishVWAPSignal (std::vector<double>& vwap_values, std::vector<Tick>& ticker_data, size_t iteration) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bullish sign:
-    return true;
+    if (ticker_data[iteration - 1].close <= vwap_values[iteration - 1]
+            && ticker_data[iteration].close > vwap_values[iteration]) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 // Bearish MACD signal: MACD line crosses below the Signal line
 // Bearish VWAP signal: price crosses below the VWAP line (sellers accepting prices lower than VWAP)
 
-bool bearishMACDSignal (MACDResult& macd_values) {
+bool bearishMACDSignal (MACDResult& macd_values, size_t iteration) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bearish sign:
-    return true;
+    if (macd_values.macd[iteration - 1] >= macd_values.signal[iteration - 1]
+            && macd_values.macd[iteration] < macd_values.signal[iteration]) {
+                return true;
+    } else {
+        return false;
+    }
 }
 
-bool bearishVWAPSignal (std::vector<double>& vwap_values) {
+bool bearishVWAPSignal (std::vector<double>& vwap_values, std::vector<Tick>& ticker_data, size_t iteration) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bearish sign:
-    return true;
+    if (ticker_data[iteration - 1].close >= vwap_values[iteration - 1]
+            && ticker_data[iteration].close < vwap_values[iteration]) {
+        return true;
+    } else {
+        return false;
+    }
 }
 
 
-optimizer_result getOptimizerResult (int& fastEMAPeriod, int& slowEMAPeriod, int& signalPeriod, std::vector<Tick>& tickerData) {
-    optimizer_result optimizer_result;
-
+std::vector<Trade> MACD_VWAPBacktestResultCalc (int& fastEMAPeriod, int& slowEMAPeriod, int& signalPeriod
+    , double starting_capital, std::vector<Tick>& tickerData) {
+    std::vector<Trade> macd_vwap_backtest_result;
     // test edge cases:
     if (fastEMAPeriod > slowEMAPeriod) {
         // fast period = smaller period
         fmt::print("Error: fast EMA period of the MACD cannot be bigger than the slow EMA period!");
-        return optimizer_result;
+        return macd_vwap_backtest_result;
     } else if (tickerData.size() == 0) {
         // CHECKS IF tickerdata IS EMPTY
         fmt::print("Error: ticker data is empty!");
-        return optimizer_result;
+        return macd_vwap_backtest_result;
     }
     // get the MACD and VWAP vectors:
     MACDResult macd_values = macdCalc(fastEMAPeriod, slowEMAPeriod, signalPeriod, tickerData);
@@ -77,27 +97,58 @@ optimizer_result getOptimizerResult (int& fastEMAPeriod, int& slowEMAPeriod, int
     // The same is true for bearish signals.
     // Hence, I must account for this delay between bullish signals
     // THE SAME APPLIES FOR BEARISH CIRCUMSTANCES AS WELL
+    
+    // Set the signals
+    bool bullish_MACD;
+    bool bullish_VWAP;
 
-    // macd.size() is already of size slowEMAperiod 
-    for (int current_day = 1; current_day < macd_values.macd.size(); current_day++) {
-        fmt::print("Lol");
+    bool bearish_MACD;
+    bool bearish_VWAP;
+
+    // Keep track of available shares, unrealized/realized PnL, and buying power
+    int available_shares = 0;
+    double unrealized_PnL = 0;
+    double realized_PnL = 0;
+    double buying_power = starting_capital;
+
+    // macd.size() is already of size slowEMAperiod  and trimmed to fit with the singal line
+    // iteration starts at 1 to check "previous day" for crossover
+    // OFFSET THE UPPER CEILING BY 1 TO PREVENT GOING FOR NEXT DAY'S DATA TO TRADE
+    // WHICH MAY BE OUT OF BOUNDS
+    // starting iteration is set by the documentation within core/tech_indicators/macd.cpp for starting day
+    for (int iteration = slowEMAPeriod + signalPeriod - 1; iteration < macd_values.macd.size() - 1; iteration++) {
+        Trade trade;
+        bullish_MACD = bullishMACDSignal(macd_values, iteration);
+        bullish_VWAP = bullishVWAPSignal(vwap_values, tickerData, iteration);
+        if (bullish_MACD && bullish_VWAP) {
+            // make sure there is enough buying power to make a trade
+            // NOTE: check the price of next day's open
+            if (buying_power >= tickerData[iteration + 1].open) {
+                // set the trade values
+                trade.execution_date = tickerData[iteration + 1].date;
+                trade.order_type = "BUY";
+                trade.strike_price = tickerData[iteration + 1].open;
+                trade.shares = buying_power / trade.strike_price;
+                trade.held_shares += trade.shares;
+
+                available_shares += buying_power / tickerData[iteration + 1].open;
+                // update buying power
+                buying_power -= available_shares * tickerData[iteration + 1].open;
+            }
+        } else {
+            bearish_MACD = bearishMACDSignal(macd_values, iteration);
+            bearish_VWAP = bearishVWAPSignal(vwap_values, tickerData, iteration);
+            if (bearish_MACD && bearish_VWAP) {
+
+            }
+            else {
+
+            }
+        }
+
+        // update the trade vector
+        macd_vwap_backtest_result.push_back(trade);
     }
-
-    return optimizer_result;
-}
-
-double totalPnL() {
-    return 0.0;
-}
-
-double winRate() {
-    return 0.0;
-}
-
-double averageTradePnL() {
-    return 0.0;
-}
-
-double maxDrawDown() {
-    return 0.0;
+    
+    return macd_vwap_backtest_result;
 }

@@ -32,6 +32,7 @@ add_executable(NikTrade
     src/ui/plots/sma_plot.cpp
     src/ui/plots/ema_plot.cpp
     src/ui/plots/vwap_plot.cpp
+    src/ui/plots/rsi_plot.cpp
     src/ui/plots/macd_plot.cpp
     src/ui/backtest_plots/sma_crossover_plot.cpp
 

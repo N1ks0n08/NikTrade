@@ -4,14 +4,16 @@
 #include <vector>
 #include <algorithm>
 #include <fmt/core.h>
+
 #include "ui/plots/price_plot.hpp"
 #include "ui/plots/sma_plot.hpp"
 #include "ui/plots/ema_plot.hpp"
 #include "ui/plots/vwap_plot.hpp"
+#include "ui/plots/rsi_plot.hpp"
 #include "ui/plots/macd_plot.hpp"
+
 #include "ui/backtest_plots/sma_crossover_plot.hpp" // UTILIZED TO PLOT THE SMA CROSSOVER BACKTEST VECTOR
-#include "core/tech_indicators/rsi.hpp"
-#include "core/tech_indicators/macd.hpp"
+
 #include "core/backtest_engines/Trade.hpp"
 #include "core/backtest_engines/sma_crossover.hpp" // UTILIZED TO GET THE SMA CROSSOVER BACKTEST VECTOR
 
@@ -45,9 +47,6 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
         std::vector<double> slowSMAValues = smaCalc(slowSMAPeriod, tickDataVector);
         // ------BACKTEST SECTION-------------
         std::vector<Trade> tradeVector = sma_crossover_result(fastSMAPeriod, slowSMAPeriod, startingCapital, tickDataVector);
-
-        // Compute RSI, currently 10 day interval
-        std::vector<double> rsiValues = rsiCalc(10, tickDataVector);
 
         ImGui::Text(fmt::format("Ticker data size: {}", tickDataVector.size()).c_str());
 
@@ -103,31 +102,13 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
                 ImPlot::EndPlot();
             }
 
+            
             // ---------- RSI PLOT ----------
-            if (ImPlot::BeginPlot("RSI", nullptr, "RSI", ImVec2(-1, 0))) {
-                int lookback = 10;
-                if (!rsiValues.empty() && currentFrame > lookback) {
-                    int data_size = std::min<int>(currentFrame - lookback, static_cast<int>(rsiValues.size() - lookback));
-                    std::vector<double> x(data_size);
-                    for (int i = 0; i < data_size; ++i) x[i] = lookback + i + 1;
+            int lookback = 10;
+             // RSI parameters
+            int rsi_interval = 10;
 
-                    // RSI line
-                    ImPlot::SetNextLineStyle(ImVec4(0.0f, 0.8f, 0.0f, 1.0f), 2.0f);
-                    ImPlot::PlotLine("RSI", x.data(), rsiValues.data() + lookback, data_size);
-
-                    // Thresholds (70 / 30)
-                    std::vector<double> overbought(data_size, 70.0);
-                    std::vector<double> oversold(data_size, 30.0);
-                    ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.0f, 0.0f, 0.0f, 0.5f));
-                    ImPlot::PlotLine("Overbought", x.data(), overbought.data(), data_size);
-                    ImPlot::PopStyleColor();
-
-                    ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(0.0f, 0.0f, 1.0f, 0.5f));
-                    ImPlot::PlotLine("Oversold", x.data(), oversold.data(), data_size);
-                    ImPlot::PopStyleColor();
-                }
-                ImPlot::EndPlot();
-            }
+            plotRSI(tickDataVector, rsi_interval, currentFrame, lookback);            
 
             // Inside your ImPlot subplot for MACD
             if (ImPlot::BeginPlot("MACD", "Time", "MACD", ImVec2(-1, 0))) {

@@ -1,7 +1,7 @@
 #include "macd_plot.hpp"
 #include <fmt/core.h>
 
-void plotMACD(const std::vector<Tick>& tickData, int& fastEMA_period, int& slowEMA_period, int& signal_period, int currentFrame, int lookback = 10) {
+void plotMACD(const std::vector<Tick>& tickData, int& fastEMA_period, int& slowEMA_period, int& signal_period, int& currentFrame, int& lookback) {
     MACDResult macd_values = macdCalc(fastEMA_period, slowEMA_period, signal_period, tickData);
     const auto& macd   = macd_values.macd;
     const auto& signal = macd_values.signal;
@@ -15,13 +15,12 @@ void plotMACD(const std::vector<Tick>& tickData, int& fastEMA_period, int& slowE
 
     // Prepare X-axis (just use index)
     size_t total_size = macd.size(); // static plotting uses full MACD vector
+    // STARTING X POSITION OFFSET:
+    size_t starting_xpos_MACD = slowEMA_period + signal_period - 1;
     std::vector<double> x(total_size);
     for (size_t i = 0; i < total_size; ++i) {
-        x[i] = static_cast<double>(i);
+        x[i] = static_cast<double>(i + starting_xpos_MACD);
     }
-
-    ImGui::Text(fmt::format("MACD size: {}, Signal size: {}, Hist size: {}",
-                            macd.size(), signal.size(), hist.size()).c_str());
 
     // --- MACD Line ---
     ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 2.0f);
