@@ -6,36 +6,8 @@ void plotMACD(const std::vector<Tick>& tickData, int& fastEMA_period, int& slowE
     const auto& macd   = macd_values.macd;
     const auto& signal = macd_values.signal;
     const auto& hist   = macd_values.histogram;
-    /*
-    size_t total_size = std::min({ macd.size(), signal.size(), hist.size() });
-    if (total_size == 0 || currentFrame <= lookback)
-        return;
 
-    int data_size = std::min<int>(currentFrame - lookback, static_cast<int>(total_size - lookback));
-
-    std::vector<double> x(data_size);
-    for (int i = 0; i < data_size; ++i)
-        x[i] = lookback + i + 1;
-    
-    ImGui::Text(fmt::format("MACD size: {}\nSignal size: {}", macd_values.macd.size(), macd_values.signal.size()).c_str());
-
-    // --- MACD Line ---
-    if (macd.size() >= lookback + data_size) {
-        ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 2.0f);
-        ImPlot::PlotLine("MACD Line", x.data(), macd.data() + lookback, data_size);
-    }
-
-    // --- Signal Line ---
-    if (signal.size() >= lookback + data_size) {
-        ImPlot::SetNextLineStyle(ImVec4(0.2f, 0.2f, 1.0f, 1.0f), 2.0f);
-        ImPlot::PlotLine("Signal Line", x.data(), signal.data() + lookback, data_size);
-    }
-
-    // --- Histogram ---
-    if (hist.size() >= lookback + data_size) {
-        ImPlot::PlotBars("Histogram", x.data(), hist.data() + lookback, data_size, 0.5);
-    } */
-        // Sanity check
+    // Sanity check
     if (macd.empty() || signal.empty() || hist.empty()) {
         ImGui::Text("MACD, Signal, or Histogram vector is empty!");
         return;

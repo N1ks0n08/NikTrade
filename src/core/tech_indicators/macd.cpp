@@ -53,45 +53,32 @@ MACDResult macdCalc(int fast_EMA_period, int slow_EMA_period, int signal_period,
     // it appears the latest in MACD calculatoin (typically)
     macd_result.macd.reserve(slowEMA.size());
 
-    /*
-    Poorly documented/cohesive code:
-    size_t startIdx = slow_EMA_period - 1; // make sure to use the same starting point for the fast EMA as the slow EMA
-    for (size_t iterator = 0; iterator < slowEMA.size(); ++iterator) {
-        // safety check to prevent out-of-range access
-        if (startIdx + iterator >= fastEMA.size()) break;
-        // e.g.:
-        // if fast EMA period = 12
-        // and slow EMA period = 24
-        // fast EMA starting point: slow EMA period - 1
-        // slow EMA starting point: 0
-        macd_result.macd.push_back(fastEMA[startIdx + iterator] - slowEMA[iterator]);
-    }
-    */
-
     // Calculate MACD line and set it to the MACDResult object:
     // NOTE: THE MAX SIZE OF MACD IS LIMITED TO THE SIZE OF THE SLOW EMA
     // Therefore, I must offset the start indexes of the other vectors as well:
     // e.g. if data size = 100,
-    // slowEMA period = 40,
-    // fastEMA period = 20,
+    // slowEMA period = 26,
+    // fastEMA period = 12,
     //
     // (Using current_day = 1 for iteration) 
     //
     // For visual and conceptual purposes:
     // price starts on: current_day = 1
-    // slowEMA starts on: current_day = 40 (first calculation happens af the 40th day)
-    // fastEMA starts on: current_day = 20 (first calculation happens on the 20th day)
+    // slowEMA starts on: current_day = 26 (first calculation happens af the 26th day)
+    // fastEMA starts on: current_day = 12 (first calculation happens on the 12th day)
     //
     // THEREFORE:
     // price index STARTS @: current_day - 1 (minus 1 due to index starting at 0)
-    // slowEMA index STARTS @: current_day - 40 (subtract 40 days since the slowEMA starts on day 40)
-    // fastEMA index STARTS @: current_day - 20 (subtract 20 days since the fastEMA starts on day 20)
+    // slowEMA index STARTS @: current_day - 26 (subtract 26 days since the slowEMA starts on day 26)
+    // fastEMA index STARTS @: current_day - 12 (subtract 12 days since the fastEMA starts on day 12)
 
     // Using the ticker data's size to index correctly:
-    // ticker_data.size() + 1 allows for me to reach "Day 100" (index value of 99 after subtracting 1)
+    // ticker_data.size() + 1 allows for me to reach "Day 122" (index value of 121 after subtracting 1)
     // START AT current_day = SLOW EMA PERIOD TO ALLOW FOR 
     // ALL VECTORS TO BE AVAILABLE FOR MACD calculation!
     // (subtract by 1 to convert from "current day" to index positioning)
+    // e.g.: Given a max ticker size of 122:
+    // goes from starting at 26 ( slowEMAPeriod) to 123 -> MACD size of: 123 - 26 = 97
     for (size_t current_day = slow_EMA_period; current_day < ticker_data.size() + 1; current_day++) {
         // actual array index positoins for:
         // ticker_data: current_day - 1
@@ -108,9 +95,20 @@ MACDResult macdCalc(int fast_EMA_period, int slow_EMA_period, int signal_period,
 
     // DATA NORMALIZING FOR EQUAL LENGTH VECTORS
     // Cut up the macd to align with the starting index of signal vector:
-    size_t trimCount = macd_result.macd.size() - macd_result.signal.size();
-    macd_result.macd.erase(macd_result.macd.begin(), macd_result.macd.begin() + trimCount);
+    // e.g. (Assuming singal length of 9 periods):
+    // SIgnal starts on the 9th INDEX OF MACD LINE
+    // 9th index = position 8 (or macd[8])
+    // Therefore, we must skip index range: [0, 7]
+    // [0, 7] = first 8 elements of MACD line
+    // Simple calculation to find the trim:
+    // trim = singal_peroid - 1
+    // trim = 9 - 1
+    // trim = 8, which is correct.
 
+    size_t trimCount = signal_period - 1;
+    macd_result.macd.erase(macd_result.macd.begin(), macd_result.macd.begin() + trimCount);
+    // Final size of MACD line and Signal line after being cut and appropriately matched:
+    // MACD line size - trim = 97 - 8 = 89
     // Reserve and set the histogram vector into the MACDResult object:
     macd_result.histogram = histogramCalculator(macd_result.macd, macd_result.signal);
 
