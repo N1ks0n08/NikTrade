@@ -14,13 +14,13 @@
 bool bullishMACDSignal (MACDResult& macd_values) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bullish sign:
-
+    return true;
 }
 
 bool bullishVWAPSignal (std::vector<double>& vwap_values) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bullish sign:
-
+    return true;
 }
 
 // Bearish MACD signal: MACD line crosses below the Signal line
@@ -29,13 +29,13 @@ bool bullishVWAPSignal (std::vector<double>& vwap_values) {
 bool bearishMACDSignal (MACDResult& macd_values) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bearish sign:
-
+    return true;
 }
 
 bool bearishVWAPSignal (std::vector<double>& vwap_values) {
     // compare hte previous day's values to current day's values
     // to determine if there is a bearish sign:
-
+    return true;
 }
 
 
@@ -57,24 +57,8 @@ optimizer_result getOptimizerResult (int& fastEMAPeriod, int& slowEMAPeriod, int
     std::vector<double> vwap_values = vwapCalc(tickerData);
 
     // BACKTEST LOGIC 1:
-    //this engine starts on the same day ALL vectors are first available,
+    // This engine starts on the same day ALL vectors are first available,
     // which means the start of the slowEMA period as it starts the latest.
-    // Therefore, I must offset the start indexes of the other vectors as well:
-    // e.g. if data size = 100,
-    // slowEMA period = 40,
-    // fastEMA period = 20,
-    //
-    // (Using current_day = 1 for iteration) 
-    //
-    // For visual and conceptual purposes:
-    // price starts on: current_day = 1
-    // slowEMA starts on: current_day = 40 (first calculation happens af the 40th day)
-    // fastEMA starts on: current_day = 20 (first calculation happens on the 20th day)
-    //
-    // THEREFORE:
-    // price index STARTS @: current_day - 1 (minus 1 due to index starting at 0)
-    // slowEMA index STARTS @: current_day - 40 (subtract 40 days since the slowEMA starts on day 40)
-    // fastEMA index STARTS @: current_day - 20 (subtract 20 days since the fastEMA starts on day 20)
 
     // BACKTEST LOGIC 2:
     // In order to execute trades,
@@ -94,22 +78,26 @@ optimizer_result getOptimizerResult (int& fastEMAPeriod, int& slowEMAPeriod, int
     // Hence, I must account for this delay between bullish signals
     // THE SAME APPLIES FOR BEARISH CIRCUMSTANCES AS WELL
 
+    // macd.size() is already of size slowEMAperiod 
+    for (int current_day = 1; current_day < macd_values.macd.size(); current_day++) {
+        fmt::print("Lol");
+    }
 
     return optimizer_result;
 }
 
 double totalPnL() {
-
+    return 0.0;
 }
 
 double winRate() {
-
+    return 0.0;
 }
 
 double averageTradePnL() {
-
+    return 0.0;
 }
 
 double maxDrawDown() {
-
+    return 0.0;
 }

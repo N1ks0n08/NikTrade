@@ -3,10 +3,12 @@
 #include <implot.h>
 #include <vector>
 #include <algorithm>
+#include <fmt/core.h>
 #include "ui/plots/price_plot.hpp"
 #include "ui/plots/sma_plot.hpp"
 #include "ui/plots/ema_plot.hpp"
 #include "ui/plots/vwap_plot.hpp"
+#include "ui/plots/macd_plot.hpp"
 #include "ui/backtest_plots/sma_crossover_plot.hpp" // UTILIZED TO PLOT THE SMA CROSSOVER BACKTEST VECTOR
 #include "core/tech_indicators/rsi.hpp"
 #include "core/tech_indicators/macd.hpp"
@@ -47,9 +49,7 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
         // Compute RSI, currently 10 day interval
         std::vector<double> rsiValues = rsiCalc(10, tickDataVector);
 
-        // Compute MACD, currently at:
-        // Fast EMA: 12, Slow EMA: 26, Signal EMA: 9
-        MACDResult macd_values = macdCalc(12, 26, 9, tickDataVector);
+        ImGui::Text(fmt::format("Ticker data size: {}", tickDataVector.size()).c_str());
 
         // Compute VWAP
         std::vector<double> vwap_values = vwapCalc(tickDataVector);
@@ -69,10 +69,11 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
         static int currentFrame = 0;
         double now = ImGui::GetTime();
 
-        if (now - lastUpdate > 0.066) { // ~15 FPS
-            currentFrame = (currentFrame + 1) % (int)tickDataVector.size();
-            lastUpdate = now;
-        }
+    if (now - lastUpdate > 0.066) { // ~15 FPS
+        if (currentFrame < static_cast<int>(tickDataVector.size()))
+            currentFrame++;
+        lastUpdate = now;
+    }
 
         // Combined Subplots for Price, RSI, and MACD
         // -------------------------------
@@ -128,36 +129,19 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
                 ImPlot::EndPlot();
             }
 
-            // ---------- MACD PLOT ----------
+            // Inside your ImPlot subplot for MACD
             if (ImPlot::BeginPlot("MACD", "Time", "MACD", ImVec2(-1, 0))) {
-                const auto& macd = macd_values.macd;
-                const auto& signal = macd_values.signal;
-                const auto& hist = macd_values.histogram;
-                size_t total_size = std::min({ macd.size(), signal.size(), hist.size() });
+                int lookBack = 10;
+                // MACD parameters
+                int fastEMA_period = 12;
+                int slowEMA_period = 26;
+                int signal_period  = 9;
 
-                int lookback = 10;
-                if (total_size > 0 && currentFrame > lookback) {
-                    int data_size = std::min<int>(currentFrame - lookback, static_cast<int>(total_size - lookback));
-
-                    std::vector<double> x(data_size);
-                    for (int i = 0; i < data_size; ++i)
-                        x[i] = lookback + i + 1;
-
-                    // MACD Line
-                    ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), 2.0f);
-                    ImPlot::PlotLine("MACD Line", x.data(), macd.data() + lookback, data_size);
-
-                    // Signal Line
-                    ImPlot::SetNextLineStyle(ImVec4(0.2f, 0.2f, 1.0f, 1.0f), 2.0f);
-                    ImPlot::PlotLine("Signal Line", x.data(), signal.data() + lookback, data_size);
-
-                    // Histogram
-                    ImPlot::PlotBars("Histogram", x.data(), hist.data() + lookback, data_size, 0.5);
-                }
+                // Plot MACD, Signal, Histogram dynamically
+                plotMACD(tickDataVector, fastEMA_period, slowEMA_period, signal_period, currentFrame, lookBack);
 
                 ImPlot::EndPlot();
             }
-
             ImPlot::EndSubplots();
         }
     }
