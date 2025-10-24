@@ -63,7 +63,6 @@ std::vector<Trade> sma_crossover_result(int& fastSMAPeriod, int& slowSMAPeriod, 
             startingCapital -= available_shares * last_bought_strike_price;
             trade.unrealizedPnL = 0;
             trade.realizedPnL = sma_crossover_trades.empty() ? 0 : sma_crossover_trades.back().realizedPnL;
-            trade.totalEquityValue = startingCapital;
 
             sma_crossover_trades.push_back(trade);
         }
@@ -77,7 +76,6 @@ std::vector<Trade> sma_crossover_result(int& fastSMAPeriod, int& slowSMAPeriod, 
             trade.realizedPnL = (trade.strike_price - last_bought_strike_price) * available_shares;
             startingCapital += trade.realizedPnL;
             available_shares = 0;
-            trade.totalEquityValue = startingCapital;
 
             sma_crossover_trades.push_back(trade);
         }
@@ -91,7 +89,6 @@ std::vector<Trade> sma_crossover_result(int& fastSMAPeriod, int& slowSMAPeriod, 
             double unrealizedPnL = available_shares * (ticker_data[day + 1].open - last_bought_strike_price);
             trade.unrealizedPnL = unrealizedPnL;
             trade.realizedPnL = sma_crossover_trades.empty() ? 0 : sma_crossover_trades.back().realizedPnL;
-            trade.totalEquityValue = startingCapital + unrealizedPnL + trade.realizedPnL;
 
             sma_crossover_trades.push_back(trade);
         }

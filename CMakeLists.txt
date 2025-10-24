@@ -23,7 +23,7 @@ add_executable(NikTrade
     src/core/tech_indicators/macd.cpp
     src/core/tech_indicators/vwap.cpp
     src/core/backtest_engines/sma_crossover.cpp
-    src/core/backtest_engines/macd_vwap_optimizer.cpp
+    src/core/backtest_engines/macd_vwapBacktester.cpp
 
     src/ui/core/init.cpp
     src/ui/windows/main_window.cpp
@@ -35,6 +35,7 @@ add_executable(NikTrade
     src/ui/plots/rsi_plot.cpp
     src/ui/plots/macd_plot.cpp
     src/ui/backtest_plots/sma_crossover_plot.cpp
+    src/ui/backtest_plots/macd_vwapBacktester_plot.cpp
 
     third_party/imgui/imgui.cpp
     third_party/imgui/imgui_draw.cpp
