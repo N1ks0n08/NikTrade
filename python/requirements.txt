@@ -16,5 +16,8 @@ tenacity>=9.0.0
 # for timestamping, metrics, and structured logs
 loguru>=0.7.2
 
+# for flatbuffers runtime libraries
+flatbuffers>=25.9.23
 
+pyzmq>=25.0
 # NOTE TO SELF: use python -m pip install -r requirements.txt
