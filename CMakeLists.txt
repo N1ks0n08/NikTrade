@@ -9,6 +9,10 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(cpr CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(ZeroMQ CONFIG REQUIRED)
+find_package(cppzmq CONFIG REQUIRED)
+find_package(flatbuffers CONFIG REQUIRED)
+find_package(Boost REQUIRED COMPONENTS lockfree)
 
 add_subdirectory(third_party/imgui)
 
@@ -25,9 +29,12 @@ add_executable(NikTrade
     src/core/backtest_engines/sma_crossover.cpp
     src/core/backtest_engines/macd_vwapBacktester.cpp
 
+    src/core/net/zmq_subscriber.cpp
+
     src/ui/core/init.cpp
     src/ui/windows/main_window.cpp
     src/ui/windows/dataDisplay_window.cpp
+    src/ui/windows/cryptoDataDisplay_window.cpp
     src/ui/plots/price_plot.cpp
     src/ui/plots/sma_plot.cpp
     src/ui/plots/ema_plot.cpp
@@ -63,3 +70,7 @@ target_link_libraries(NikTrade PRIVATE cpr::cpr)
 target_link_libraries(NikTrade PRIVATE nlohmann_json::nlohmann_json)
 target_link_libraries(NikTrade PRIVATE opengl32)
 target_link_directories(NikTrade PRIVATE third_party/implot)
+target_link_libraries(NikTrade PRIVATE libzmq libzmq-static)
+target_link_libraries(NikTrade PRIVATE cppzmq cppzmq-static)
+target_link_libraries(NikTrade PRIVATE flatbuffers::flatbuffers)
+target_link_libraries(NikTrade PRIVATE Boost::lockfree)

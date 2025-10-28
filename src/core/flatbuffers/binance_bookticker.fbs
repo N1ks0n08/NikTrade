@@ -1,0 +1,12 @@
+namespace Binance;
+
+table BookTicker {
+  update_id: ulong;      // order book updateId
+  symbol: string;     // symbol
+  best_bid: string;     // best bid price
+  bid_qty: string;     // best bid qty
+  best_ask: string;     // best ask price
+  ask_qty: string;     // best ask qty
+}
+
+root_type BookTicker;
