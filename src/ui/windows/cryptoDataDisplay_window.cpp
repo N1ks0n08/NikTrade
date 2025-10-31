@@ -13,7 +13,7 @@ void cryptoDataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeig
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2(900, 400), ImGuiCond_Once);
 
-    bool windowOpen = ImGui::Begin("Real-time Binance Crypto Data Display", nullptr,
+    bool windowOpen = ImGui::Begin("Crypto Data Display", nullptr,
                                   ImGuiWindowFlags_NoCollapse);
     if (!windowOpen) {
         ImGui::End();
@@ -25,9 +25,11 @@ void cryptoDataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeig
 
     ImGui::Text("Binance Crypto Tickers (Live Updates)");
     ImGui::Separator();
-
+    ImGui::Text("latestCryptoMessages size = %d", (int)latestCryptoMessages.size());
     for (const auto& msg : latestCryptoMessages) {
-        if (msg.empty()) continue;
+        if (msg.empty()) {
+            continue;
+        }
 
         // Decode FlatBuffer
         const Binance::BookTicker* bookTicker = Binance::GetBookTicker(msg.data());
@@ -49,7 +51,6 @@ void cryptoDataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeig
         ImGui::SameLine();
         ImGui::Text("Bid: %.4f (%.2f) | Ask: %.4f (%.2f)", bid, bidQty, ask, askQty);
     }
-
     ImGui::PopStyleColor(2);
     ImGui::End();
 }

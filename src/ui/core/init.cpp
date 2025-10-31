@@ -5,8 +5,9 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <implot.h>
+namespace fs = std::filesystem;
 
-GLFWwindow* initWindow(int width, int height, const char* title) {
+GLFWwindow* initWindow(int width, int height, const char* title, fs::path exeDir) {
     /* Initialize the library: (REQUIRED BEFORE GLFW FUNCTIONS CAN BE USED) */
     if (!glfwInit()) { fmt::print("Error: GLFW initialization failed..."); return nullptr; }
 
@@ -29,7 +30,10 @@ GLFWwindow* initWindow(int width, int height, const char* title) {
     ImGui::CreateContext();
     ImPlot::CreateContext(); // SEPARATE ImPlot CONTEXT REQUIRED TO START
 
+
     ImGuiIO& io = ImGui::GetIO();
+    fs::path iniPath = exeDir / "imgui_layout.ini";
+    io.IniFilename = iniPath.string().c_str();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
     // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // Enable multi-viewport
@@ -64,6 +68,7 @@ void endImGuiFrame() {
 
 void shutdownUI(GLFWwindow* window) {
     /* Termination process */
+    // ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename); // SAVE THE imgui_layout.ini FOR LATER
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImPlot::DestroyContext(); // REQUIRED BEFORE ImGui CONTEXT DELETION

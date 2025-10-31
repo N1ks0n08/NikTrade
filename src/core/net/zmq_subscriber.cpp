@@ -45,22 +45,37 @@ void ZMQSubscriber::receive_loop() {
             zmq::poll(items, 1, std::chrono::milliseconds(100));
             
             if (items[0].revents & ZMQ_POLLIN) {
-                zmq::message_t msg;
-                if (socket_.recv(msg)) {
-                    const auto* data = static_cast<uint8_t*>(msg.data());
-                    std::vector<uint8_t> buffer(data, data + msg.size());
-                    
-                    while (running_ && !queue_->push(std::move(buffer))) {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
+                // Receive topic frame first
+                zmq::message_t topic_msg;
+                if (!socket_.recv(topic_msg, zmq::recv_flags::none)) continue;
+
+                // Receive payload frame second
+                zmq::message_t payload_msg;
+                if (!socket_.recv(payload_msg, zmq::recv_flags::none)) continue;
+
+                // Convert topic to string
+                std::string topic_str(static_cast<char*>(topic_msg.data()), topic_msg.size());
+                
+                // Copy payload into vector
+                const auto* data = static_cast<uint8_t*>(payload_msg.data());
+                std::vector<uint8_t> buffer(data, data + payload_msg.size());
+
+                // Optional: print for debugging
+                //fmt::print("[ZMQSubscriber] Received topic: {}\n", topic_str);
+
+                // Push to queue (blocks if full)
+                while (running_ && !queue_->push(std::move(buffer))) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
             }
         } catch (const zmq::error_t& e) {
+            // Ignore ETERM; it means context is terminated
             if (e.num() != ETERM) {
                 std::cerr << "ZMQ error: " << e.what() << "\n";
             }
-            break;
+            break; // Exit loop on error
         }
     }
 }
+
 } // namespace Binance

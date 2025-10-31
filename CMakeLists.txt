@@ -30,9 +30,11 @@ add_executable(NikTrade
     src/core/backtest_engines/macd_vwapBacktester.cpp
 
     src/core/net/zmq_subscriber.cpp
+    src/core/net/python_launcher.cpp
 
     src/ui/core/init.cpp
     src/ui/windows/main_window.cpp
+    src/ui/windows/banner_window.cpp
     src/ui/windows/dataDisplay_window.cpp
     src/ui/windows/cryptoDataDisplay_window.cpp
     src/ui/plots/price_plot.cpp
@@ -74,3 +76,33 @@ target_link_libraries(NikTrade PRIVATE libzmq libzmq-static)
 target_link_libraries(NikTrade PRIVATE cppzmq cppzmq-static)
 target_link_libraries(NikTrade PRIVATE flatbuffers::flatbuffers)
 target_link_libraries(NikTrade PRIVATE Boost::lockfree)
+
+# ------------------- Copy Python scripts and resources -------------------
+# This ensures build/ has python/ and resources/ copied for testing
+add_custom_command(TARGET NikTrade POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/python
+        $<TARGET_FILE_DIR:NikTrade>/python
+)
+add_custom_command(TARGET NikTrade POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/resources
+        $<TARGET_FILE_DIR:NikTrade>/resources
+)
+
+# ------------------- Copy Binance FlatBuffers Python module -------------------
+add_custom_command(TARGET NikTrade POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/flatbuffers/Binance
+        $<TARGET_FILE_DIR:NikTrade>/python/Binance
+)
+
+# ------------------- Install rules -------------------
+install(TARGETS NikTrade DESTINATION bin)
+install(DIRECTORY python DESTINATION bin)
+install(DIRECTORY resources DESTINATION bin)
+# Install Binance FlatBuffers Python module
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/core/flatbuffers/Binance
+        DESTINATION bin/python
+        FILES_MATCHING PATTERN "*.py"
+)

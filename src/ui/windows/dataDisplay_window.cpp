@@ -27,7 +27,7 @@ void dataDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight, st
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(1, 1, 1, 1));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
 
-    if (ImGui::Begin("SPY 2025 EOD Data Graph", nullptr,
+    if (ImGui::Begin("Equity Data Display", nullptr,
         ImGuiWindowFlags_NoCollapse |
         ImGuiWindowFlags_NoSavedSettings))
         // | ImGuiWindowFlags_AlwaysAutoResize)) Not in use for now
