@@ -101,6 +101,7 @@ int main() {
 
         endImGuiFrame();
         glfwSwapBuffers(window);
+        //fmt::print("Hello!");
     }
 
     // --------------------- Cleanup ---------------------

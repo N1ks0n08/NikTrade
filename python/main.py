@@ -22,7 +22,7 @@ async def fetch_binance_symbols():
             return json.load(f)
 
     logger.info("[INFO] Fetching active symbols from Binance REST API...")
-    url = "https://api.binance.com/api/v3/exchangeInfo"
+    url = "https://api.binance.us/api/v3/exchangeInfo"
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:

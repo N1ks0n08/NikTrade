@@ -9,22 +9,23 @@ import flatbuffers
 from Binance import BookTicker  # Generated FlatBuffers Python module
 
 def encode_bookticker(payload: dict) -> bytes:
-    """
-    Convert raw Binance bookTicker JSON into FlatBuffers bytes.
-    """
-    builder = flatbuffers.Builder(0)
+    builder = flatbuffers.Builder(1024)
 
-    # Prepare strings
-    symbol = builder.CreateString(payload["s"])
+    # Strings must be FlatBuffers string offsets
+    symbol = builder.CreateString(payload.get("s", "UNKNOWN"))
+    best_bid = builder.CreateString(payload.get("b", "0.0"))
+    bid_qty = builder.CreateString(payload.get("B", "0.0"))
+    best_ask = builder.CreateString(payload.get("a", "0.0"))
+    ask_qty = builder.CreateString(payload.get("A", "0.0"))
+    update_id = int(payload.get("u", 0))
 
-    # Start building FlatBuffer
     BookTicker.BookTickerStart(builder)
-    BookTicker.BookTickerAddUpdateId(builder, int(payload["u"]))
+    BookTicker.BookTickerAddUpdateId(builder, update_id)
     BookTicker.BookTickerAddSymbol(builder, symbol)
-    BookTicker.BookTickerAddBestBid(builder, float(payload["b"]))
-    BookTicker.BookTickerAddBidQty(builder, float(payload["B"]))
-    BookTicker.BookTickerAddBestAsk(builder, float(payload["a"]))
-    BookTicker.BookTickerAddAskQty(builder, float(payload["A"]))
+    BookTicker.BookTickerAddBestBid(builder, best_bid)
+    BookTicker.BookTickerAddBidQty(builder, bid_qty)
+    BookTicker.BookTickerAddBestAsk(builder, best_ask)
+    BookTicker.BookTickerAddAskQty(builder, ask_qty)
     fb_obj = BookTicker.BookTickerEnd(builder)
     builder.Finish(fb_obj)
 
