@@ -1,0 +1,24 @@
+namespace Binance;
+
+// Single kline/candlestick data
+table Kline {
+  open_time: ulong;           // Open time (ms)
+  open_price: string;         // Open price
+  high_price: string;         // High price
+  low_price: string;          // Low price
+  close_price: string;        // Close price
+  volume: string;             // Base asset volume
+  close_time: ulong;          // Close time (ms)
+  quote_asset_volume: string; // Quote asset volume
+  number_of_trades: ulong;    // Number of trades
+  taker_buy_base: string;     // Taker buy base asset volume
+  taker_buy_quote: string;    // Taker buy quote asset volume
+  ignore: string;             // Placeholder, can ignore
+}
+
+// Wrapper for multiple candles
+table Klines {
+  klines: [Kline];          // Vector of KlineData tables
+}
+
+root_type Klines;

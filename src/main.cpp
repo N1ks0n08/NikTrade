@@ -1,37 +1,43 @@
-#include <fmt/core.h>
 #include <vector>
 #include <fstream>
 #include <string>
 #include <filesystem>
 #include <thread>
 #include <chrono>
+#include <deque>
+#include <fmt/core.h>
+
+// util modules
+#include "utils/file_logger.hpp"
 
 // core modules
 #include "core/tick.hpp"
+#include "core/binance_kline.hpp"
 #include "core/data_loader.hpp"
 #include "core/net/zmq_subscriber.hpp"
 #include "core/net/python_launcher.hpp"
+#include "core/net/zmq_control_client.hpp"
 
 // UI modules
 #include "ui/core/init.hpp"
 #include "ui/windows/dataDisplay_window.hpp"
 #include "ui/windows/cryptoDataDisplay_window.hpp"
+#include "ui/windows/cryptoChartDisplay_window.hpp"
 #include "ui/windows/banner_window.hpp"
 
 // Data communication
 #include <boost/lockfree/spsc_queue.hpp>
 #include "../src/core/flatbuffers/Binance/binance_bookticker_generated.h"
+#include "../src/core/flatbuffers/Binance/binance_kline_generated.h"
+
 // ----------- USED FOR getExecutableDir() ---------------
 #define WIN32_LEAN_AND_MEAN
-#include <windows.h>          // includes minwindef.h internally
-// ----------- USED FOR getExecutableDir() ---------------
+#include <windows.h>
 #include <imgui_internal.h>
 
 using json = nlohmann::json;
-
 namespace fs = std::filesystem;
 
-// Helper to get executable directory
 fs::path getExecutableDir() {
 #ifdef _WIN32
     char buffer[MAX_PATH];
@@ -45,140 +51,239 @@ fs::path getExecutableDir() {
 #endif
 }
 
-int main() {
-    // Get the executable directory
-    fs::path exeDir = getExecutableDir();
-    // --------------------- Initialize window & UI ---------------------
-    GLFWwindow* window = initWindow(1000, 750, "NikTrade", exeDir);
-    if (!window) return -1;
+void runHiddenCommand(const std::wstring& cmd)
+{
+    STARTUPINFOW si{};
+    PROCESS_INFORMATION pi{};
+    si.cb = sizeof(si);
 
+    // 👇 Hide window
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    // CreateProcess needs a writable buffer
+    std::wstring mutableCmd = cmd;
+
+    BOOL success = CreateProcessW(
+        nullptr,
+        mutableCmd.data(),  // command line
+        nullptr, nullptr,   // process/thread security
+        FALSE,              // inherit handles
+        CREATE_NO_WINDOW,   // absolutely no visible window
+        nullptr, nullptr,   // environment, cwd
+        &si, &pi
+    );
+
+    if (success) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+
+void forceClosePorts(FileLogger& logger) {
+#ifdef _WIN32
+    logger.logInfo("[INFO] Forcibly closing any lingering ZMQ ports (hidden) ...");
+
+    runHiddenCommand(
+        L"powershell -Command \""
+        L"$ports = @(5555, 5556, 5560); "
+        L"$ports | ForEach-Object { "
+        L"Get-NetTCPConnection -LocalPort $_ -ErrorAction SilentlyContinue | "
+        L"ForEach-Object { "
+        L"try { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } catch {} "
+        L"} }\""
+    );
+#else
+    logger.logInfo("[INFO] Forcibly closing any lingering ZMQ ports on Unix...");
+
+    system("lsof -i :5555 -t | xargs -r kill -9");
+    system("lsof -i :5556 -t | xargs -r kill -9");
+    system("lsof -i :5560 -t | xargs -r kill -9");
+#endif
+}
+
+int main() {
+    // --------------------- Initialize Logger ---------------------
+    FileLogger logger("NikTrade.log");
+    logger.logInfo("Starting NikTrade application...");
+    forceClosePorts(logger);
+
+    // --------------------- Initialize window & UI ---------------------
+    fs::path exeDir = getExecutableDir();
+    GLFWwindow* window = initWindow(1000, 750, "NikTrade", exeDir);
+    if (!window) {
+        logger.logInfo("Failed to initialize window.");
+        return -1;
+    }
+    logger.logInfo("Window initialized successfully.");
+
+    std::unique_ptr<NikTrade::PythonLauncher> pythonLauncher;
     // --------------------- Launch Python Binance publisher ---------------------
     fs::path pythonScript = exeDir / "python" / "main.py";
-
     if (!fs::exists(pythonScript)) {
-        fmt::print("Error: Python publisher not found at: {}\n", pythonScript.string());
+        logger.logInfo(fmt::format("Python publisher not found at: {}", pythonScript.string()));
     } else {
-        fmt::print("Launching Python publisher: {}\n", pythonScript.string());
+        logger.logInfo(fmt::format("Launching Python publisher: {}", pythonScript.string()));
 
-        // Explicit Python executable (matches my PowerShell environment)
-        std::string pythonExec = "py -3.13"; 
-
-        // Keep PythonLauncher alive for the duration of main
-
-        static NikTrade::PythonLauncher pythonLauncher(
+        pythonLauncher = std::make_unique<NikTrade::PythonLauncher>(
             pythonScript.string(),
             std::vector<std::string>{}, 
             "C:\\Users\\n1ksn\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"
         );
-        pythonLauncher.start();
-
-        // Give it some time to bind sockets
+        pythonLauncher->start();
         std::this_thread::sleep_for(std::chrono::seconds(1));
+        logger.logInfo("Python publisher started.");
     }
 
     // --------------------- Load JSON market data ---------------------
     fs::path jsonFile = exeDir / "resources" / "SPY_2025.json";
     std::ifstream file(jsonFile);
     if (!file.is_open()) {
-        fmt::print("Error: failed to open file at {}\n", jsonFile.string());
+        logger.logInfo(fmt::format("Failed to open JSON file at {}", jsonFile.string()));
         return -1;
     }
 
     json jsonData;
     file >> jsonData;
     std::vector<Tick> tickDataVector = json_to_tickDataVector(jsonData);
+    logger.logInfo(fmt::format("Loaded {} ticks from JSON.", tickDataVector.size()));
 
-    // --------------------- Setup ZMQ subscriber ---------------------
-    Binance::ZMQSubscriber subscriber(1024); // Queue capacity 1024
-    subscriber.start(); // Start the subscriber thread
+    // --------------------- Setup ZMQ subscribers ---------------------
+    Binance::ZMQSubscriber bookticker_sub(1024, "tcp://127.0.0.1:5555");
+    bookticker_sub.start();
+    Binance::ZMQSubscriber kline_sub(1024, "tcp://127.0.0.1:5556");
+    kline_sub.start();
+    logger.logInfo("ZMQ subscribers started for BookTicker and Kline streams.");
 
-    // --------------------- Message storage ---------------------
+    // --------------------- Storage ---------------------
     std::deque<std::vector<uint8_t>> latestCryptoMessages;
+    std::deque<std::vector<uint8_t>> latestKlineMessages;
+    std::deque<KlineData> klineDeque;
+
+    // --------------------- Flags & Timers ---------------------
+    static auto lastKlineRequest = std::chrono::steady_clock::now();
+    static const std::chrono::seconds requestInterval(5);
 
     // --------------------- Main loop ---------------------
     while (!glfwWindowShouldClose(window)) {
         startImGuiFrame(window);
-        // Before creating DockSpace
+
         float bannerHeight = 45.0f;
         ImGuiIO io = ImGui::GetIO();
         ImGui::SetNextWindowPos(ImVec2(0, bannerHeight));
         ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y - bannerHeight));
-        
-        // --------------------- Create main docking space ---------------------
-        ImGuiWindowFlags dockspaceFlags = ImGuiWindowFlags_NoTitleBar | 
-                                        ImGuiWindowFlags_NoCollapse |
-                                        ImGuiWindowFlags_NoResize |
-                                        ImGuiWindowFlags_NoMove |
-                                        ImGuiWindowFlags_NoBringToFrontOnFocus |
-                                        ImGuiWindowFlags_NoBackground;
+
+        ImGuiWindowFlags dockspaceFlags = ImGuiWindowFlags_NoTitleBar |
+                                          ImGuiWindowFlags_NoCollapse |
+                                          ImGuiWindowFlags_NoResize |
+                                          ImGuiWindowFlags_NoMove |
+                                          ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                          ImGuiWindowFlags_NoBackground;
 
         ImGui::Begin("DockSpace_Window", nullptr, dockspaceFlags);
-
-        // Create the DockSpace
         ImGuiID dockspaceID = ImGui::GetID("MainDockSpace");
         ImGui::DockSpace(dockspaceID, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
-
         ImGui::End();
 
         int width, height;
         glfwGetWindowSize(window, &width, &height);
 
-        // --------------------- Handle crypto messages from queue ---------------------
+        // --------------------- Handle crypto messages ---------------------
         std::vector<uint8_t> msg;
-        while (subscriber.pop(msg)) {
+        while (bookticker_sub.pop(msg)) {
             latestCryptoMessages.emplace_back(std::move(msg));
-
-            // Keep only last 50 messages
-            if (latestCryptoMessages.size() > 50) {
-                latestCryptoMessages.pop_front();
-            }
+            if (latestCryptoMessages.size() > 50) latestCryptoMessages.pop_front();
         }
-        // --------------------- Render Banner ---------------------
-        // Provide current status values
-        bool binanceConnected = true; // or track your real connection status
-        bool zmqActive = true;        // or track subscriber.isRunning() etc.
-        float latencyMs = 12.5f;      // compute your actual latency if needed
 
+        // --------------------- Periodic Historical Klines Request ---------------------
+        auto now = std::chrono::steady_clock::now();
+        if (now - lastKlineRequest >= requestInterval) {
+            ZMQControlClient controlClient("tcp://127.0.0.1:5560");
+            if (controlClient.requestHistoricalKlines("fire_klines BTCUSDT")) {
+                logger.logInfo("[INFO] Periodic request for historical candles sent");
+            } else {
+                logger.logInfo("[WARN] Failed to request historical candles");
+            }
+            lastKlineRequest = now;
+        }
+
+        // --------------------- Read Kline messages continuously ---------------------
+        std::vector<uint8_t> kline_msg;
+        while (kline_sub.pop(kline_msg)) {
+            const Binance::Klines* fb_klines = Binance::GetKlines(kline_msg.data());
+            if (!fb_klines || !fb_klines->klines()) continue;
+
+            for (auto kl : *(fb_klines->klines())) {
+                KlineData k;
+                k.open_time  = kl->open_time();
+                k.open       = std::stod(kl->open_price()->str());
+                k.high       = std::stod(kl->high_price()->str());
+                k.low        = std::stod(kl->low_price()->str());
+                k.close      = std::stod(kl->close_price()->str());
+                k.volume     = std::stod(kl->volume()->str());
+                k.close_time = kl->close_time();
+                klineDeque.push_back(k);
+            }
+
+            while (klineDeque.size() > 500) klineDeque.pop_front();
+
+            logger.logInfo(fmt::format("[DEBUG] Added {} Klines. Deque size: {}", fb_klines->klines()->size(), klineDeque.size()));
+        }
+
+        // --------------------- Render Banner & Windows ---------------------
+        bool binanceConnected = true;
+        bool zmqActive        = true;
+        float latencyMs       = 12.5f;
         NikTrade::bannerWindow(binanceConnected, zmqActive, latencyMs);
 
-        // --------------------- Render windows ---------------------
-    
         dataDisplayWindow(window, width, height, tickDataVector);
         cryptoDataDisplayWindow(window, width, height, latestCryptoMessages);
-        
-        // --------------------- OpenGL render ---------------------
+        cryptoChartDisplayWindow(window, width, height, klineDeque);
+
+        // --------------------- OpenGL Render ---------------------
         int fbWidth, fbHeight;
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
         glViewport(0, 0, fbWidth, fbHeight);
-
-        // Visible opaque background
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // --------------------- First-frame dock split ---------------------
+        // --------------------- Dock setup first frame ---------------------
         static bool firstFrame = true;
         if (firstFrame) {
             firstFrame = false;
-
-            ImGui::DockBuilderRemoveNode(dockspaceID); // clear old layout
+            ImGui::DockBuilderRemoveNode(dockspaceID);
             ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_None);
+
             ImGuiID dock_id_left, dock_id_right;
-            ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Right, 0.5f, &dock_id_right, &dock_id_left);
-            ImGui::DockBuilderDockWindow("Equity Data Display", dock_id_left);
+            ImGuiID dock_id_top, dock_id_bottom;
+
+            ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Right, 0.33f, &dock_id_right, &dock_id_left);
+            ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, &dock_id_bottom, &dock_id_top);
+
+            // Swap these two lines to change vertical order
+            ImGui::DockBuilderDockWindow("Crypto Chart Display", dock_id_top);
+            ImGui::DockBuilderDockWindow("Equity Data Display", dock_id_bottom);
             ImGui::DockBuilderDockWindow("Crypto Data Display", dock_id_right);
+            // NOTE: THE NAMES MUST MATCH THE WINDOW NAMES IN THEIR RESPECTIVE UI CODE
             ImGui::DockBuilderFinish(dockspaceID);
         }
 
         endImGuiFrame();
         glfwSwapBuffers(window);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     // --------------------- Cleanup ---------------------
-    subscriber.stop();
+    bookticker_sub.stop();
+    kline_sub.stop();
+    pythonLauncher->stop();
+
+    forceClosePorts(logger);
 
     shutdownUI(window);
 
-    fmt::print("Window has been terminated.\n");
+    logger.logInfo("Window has been terminated. Exiting application.");
     return 0;
 }
 

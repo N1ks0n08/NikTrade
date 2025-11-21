@@ -1,0 +1,28 @@
+Data pipeline workflows:
+
+BookTicker Stream: LIVE BBO DATA
+Kline REST API: HISTORICAL KLINE DATA
+Trade Data Stream: LIVE RAW TRADE DATA
+
+Binance.US ACTIVE SYMBOLS Workflow:
+1. Binance.US REST API available crypto pair symbols PULLED BY main.py
+
+Binance.US BookTicker Workflow:
+<symbol>@bookTicker
+1. Binance.US websocket stream data PULLED BY crypto_connection.py functions
+2. Data "flatbuffer-ized" IN main.py WITH flatbuffer_encoder.py functions
+3. Flatbuffer data sent to local TCP port IN main.py WITH zmq_publisher.py functions
+
+FOR HISTORICAL KLINE CANDLESTICK DATA:
+Binance.US HITORICAL Kline Cnadlestick Workflow:
+1. Binance.US websocket stream data PULLED BY crypto_historical_data.py functions
+2. Data "flatbuffer-ized" IN main.py WITH flatbuffer_encoder.py functions
+3. Flatbuffer data sent to local TCP port IN main.py WITH zmq_publisher.py functions
+
+
+FOR CURRENT CANDLESTICK UPDATES/LIVE TRADE DATA:
+Binance.US TRADE DATA Workflow:
+<symbol>@trade
+1. Binance.US websocket stream data PULLED BY <python_file> functions
+2. Data "flatbuffer-ized" IN main.py WITH flatbuffer_encoder.py functions
+3. Flatbuffer data sent to local TCP port IN main.py WIHT zmq_publisher.py functions
