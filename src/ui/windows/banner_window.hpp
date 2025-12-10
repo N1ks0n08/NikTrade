@@ -4,6 +4,6 @@
 
 namespace NikTrade {
 
-void bannerWindow(bool binanceConnected, bool zmqActive, float latencyMs);
+void bannerWindow(bool binanceConnected, bool zmqActive, std::string latencyMs);
 
 }

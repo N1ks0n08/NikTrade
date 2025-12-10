@@ -87,7 +87,7 @@ void forceClosePorts(FileLogger& logger) {
 
     runHiddenCommand(
         L"powershell -Command \""
-        L"$ports = @(5555, 5556, 5560); "
+        L"$ports = @(5555, 5556, 5560, 5561); "
         L"$ports | ForEach-Object { "
         L"Get-NetTCPConnection -LocalPort $_ -ErrorAction SilentlyContinue | "
         L"ForEach-Object { "
@@ -100,6 +100,7 @@ void forceClosePorts(FileLogger& logger) {
     system("lsof -i :5555 -t | xargs -r kill -9");
     system("lsof -i :5556 -t | xargs -r kill -9");
     system("lsof -i :5560 -t | xargs -r kill -9");
+    system("lsof -i :5561 -t | xargs -r kill -9");
 #endif
 }
 
@@ -154,12 +155,16 @@ int main() {
     bookticker_sub.start();
     Binance::ZMQSubscriber kline_sub(1024, "tcp://127.0.0.1:5556");
     kline_sub.start();
-    logger.logInfo("ZMQ subscribers started for BookTicker and Kline streams.");
+    Binance::ZMQSubscriber latency_sub(1024, "tcp://127.0.0.1:5561");
+    latency_sub.start();
+    logger.logInfo("ZMQ subscribers started for BookTicker, Kline, and custom latency streams.");
 
     // --------------------- Storage ---------------------
     std::deque<std::vector<uint8_t>> latestCryptoMessages;
     std::deque<std::vector<uint8_t>> latestKlineMessages;
     std::deque<KlineData> klineDeque;
+    std::string latestLatencyMessage = "Latency: Loading...";  // holds the most recent latency value
+
 
     // --------------------- Flags & Timers ---------------------
     static auto lastKlineRequest = std::chrono::steady_clock::now();
@@ -194,6 +199,29 @@ int main() {
         while (bookticker_sub.pop(msg)) {
             latestCryptoMessages.emplace_back(std::move(msg));
             if (latestCryptoMessages.size() > 50) latestCryptoMessages.pop_front();
+        }
+
+        // --------------------- Handle latency messages ---------------------
+        std::vector<uint8_t> latency_msg;
+        while (latency_sub.pop(latency_msg)) {
+            // Convert bytes to string
+            std::string msg(latency_msg.begin(), latency_msg.end());
+
+            // Split topic and payload: "feed_latency payload"
+            auto space_pos = msg.find(' ');
+            if (space_pos != std::string::npos) {
+                std::string topic = msg.substr(0, space_pos);        // "feed_latency"
+                std::string payload = msg.substr(space_pos + 1);     // e.g., "BTCUSDT 12 ms"
+
+                // Update the latest latency variable
+                latestLatencyMessage = payload;
+
+                // Optional: log for debugging
+                logger.logInfo("Updated latency for topic: " + topic);
+            } else {
+                // Handle malformed messages gracefully
+                logger.logInfo("Received malformed latency message: " + msg);
+            }
         }
 
         // --------------------- Periodic Historical Klines Request ---------------------
@@ -234,8 +262,7 @@ int main() {
         // --------------------- Render Banner & Windows ---------------------
         bool binanceConnected = true;
         bool zmqActive        = true;
-        float latencyMs       = 12.5f;
-        NikTrade::bannerWindow(binanceConnected, zmqActive, latencyMs);
+        NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage);
 
         dataDisplayWindow(window, width, height, tickDataVector);
         cryptoDataDisplayWindow(window, width, height, latestCryptoMessages);
@@ -277,6 +304,7 @@ int main() {
     // --------------------- Cleanup ---------------------
     bookticker_sub.stop();
     kline_sub.stop();
+    latency_sub.stop();
     pythonLauncher->stop();
 
     forceClosePorts(logger);

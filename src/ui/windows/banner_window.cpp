@@ -3,7 +3,7 @@
 
 namespace NikTrade {
 
-void bannerWindow(bool binanceConnected, bool zmqActive, float latencyMs) {
+void bannerWindow(bool binanceConnected, bool zmqActive, std::string latency_message) {
     ImGuiIO& io = ImGui::GetIO();
 
     // Position at top of screen, full width
@@ -54,7 +54,7 @@ void bannerWindow(bool binanceConnected, bool zmqActive, float latencyMs) {
                            zmqActive ? "Active" : "Inactive");
 
         ImGui::SameLine();
-        ImGui::Text("%s", fmt::format("|  Latency: {:.2f} ms", latencyMs).c_str());
+        ImGui::Text("%s", fmt::format("|  {}", latency_message).c_str());
     }
 
     ImGui::End();

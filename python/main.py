@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-import signal
+import time
 
 import aiohttp
 import zmq
@@ -55,19 +55,41 @@ async def fetch_binance_symbols():
 async def stream_and_publish(symbols):
     publisher = ZMQPublisher("tcp://127.0.0.1:5555")
     publisher.socket.linger = 0  # release port immediately
+    latency_publisher = ZMQPublisher("tcp://127.0.0.1:5561")
+    latency_publisher.socket.linger = 0  # release port immediately
 
     async def consume(sym):
+        # Global variable to hold last latency/freshness
+        last_latency = "Loading..."  # Will display until first message
+        last_msg_time = None  # Timestamp of last received message in ms
         try:
             async for payload in book_ticker_stream(sym):
                 if shutdown_event.is_set():
                     break
+
                 try:
+                    # ---------------- Freshness / Latency Calculation ----------------
+                    now = int(time.time() * 1000)  # Current local time in ms
+                    if last_msg_time is None:
+                        last_latency = "Loading..."
+                    else:
+                        last_latency = f"{now - last_msg_time} ms"
+                    last_msg_time = now
+
+                    # ---------------- Publish Latency ----------------
+                    # Convert string to bytes before sending
+                    await publish_latency(latency_publisher, f"{sym} {last_latency}".encode("utf-8"))
+                    # ---------------- Encode & Publish BookTicker ----------------
                     fb_bytes = encode_bookticker(payload)
                     await publisher.publish(f"bookticker.{sym}", fb_bytes)
-                    await asyncio.sleep(0.05)
+
+                    # ---------------- Optional Throttle ----------------
+                    await asyncio.sleep(0.05)  # adjust UI update frequency
+
                 except Exception as e:
                     logger.error(f"[ERROR] {sym}: {e}")
                     await asyncio.sleep(1)
+
         except asyncio.CancelledError:
             pass
 
@@ -101,6 +123,18 @@ async def fetch_and_publish_klines(symbol: str):
 
     await publisher.close()
     logger.info("[INFO] Klines publisher closed.")
+
+
+async def publish_latency(latency_publisher, payload: bytes):
+    """
+    Publish a pre-formatted latency payload to the latency feed.
+    Socket is long-lived and bound once.
+    """
+    try:
+        await latency_publisher.publish("feed_latency", payload)
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to publish latency: {e}")
+
 
 
 async def control_server():
