@@ -13,11 +13,10 @@ from crypto_historical_data import fetch_historical_klines
 from flatbuffer_encoder import encode_bookticker, encode_klines
 from zmq_publisher import ZMQPublisher
 
-# ------------------- Cross-platform ZMQ fix for Windows -------------------
 import sys
+
 if sys.platform.startswith("win"):
-    if hasattr(asyncio, "WindowsSelectorEventLoopPolicy"):
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # ------------------- Logging setup -------------------
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +27,7 @@ SYMBOL_FILE = Path.cwd() / "binance_symbols.json"
 # ------------------- Shutdown Event -------------------
 shutdown_event = asyncio.Event()
 
-
+# ------------------- Helper: Load Symbols -------------------
 async def fetch_binance_symbols():
     if SYMBOL_FILE.exists():
         logger.info(f"[INFO] Loading cached symbols from {SYMBOL_FILE}")
@@ -37,7 +36,6 @@ async def fetch_binance_symbols():
 
     logger.info("[INFO] Fetching active symbols from Binance REST API...")
     url = "https://api.binance.us/api/v3/exchangeInfo"
-
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as resp:
             resp.raise_for_status()
@@ -51,147 +49,165 @@ async def fetch_binance_symbols():
     logger.info(f"[INFO] Saved {len(symbols)} trading pairs to {SYMBOL_FILE}")
     return symbols
 
-
-async def stream_and_publish(symbols):
-    publisher = ZMQPublisher("tcp://127.0.0.1:5555")
-    publisher.socket.linger = 0  # release port immediately
-    latency_publisher = ZMQPublisher("tcp://127.0.0.1:5561")
-    latency_publisher.socket.linger = 0  # release port immediately
-
-    async def consume(sym):
-        # Global variable to hold last latency/freshness
-        last_latency = "Loading..."  # Will display until first message
-        last_msg_time = None  # Timestamp of last received message in ms
-        try:
-            async for payload in book_ticker_stream(sym):
-                if shutdown_event.is_set():
-                    break
-
-                try:
-                    # ---------------- Freshness / Latency Calculation ----------------
-                    now = int(time.time() * 1000)  # Current local time in ms
-                    if last_msg_time is None:
-                        last_latency = "Loading..."
-                    else:
-                        last_latency = f"{now - last_msg_time} ms"
-                    last_msg_time = now
-
-                    # ---------------- Publish Latency ----------------
-                    # Convert string to bytes before sending
-                    await publish_latency(latency_publisher, f"{sym} {last_latency}".encode("utf-8"))
-                    # ---------------- Encode & Publish BookTicker ----------------
-                    fb_bytes = encode_bookticker(payload)
-                    await publisher.publish(f"bookticker.{sym}", fb_bytes)
-
-                    # ---------------- Optional Throttle ----------------
-                    await asyncio.sleep(0.05)  # adjust UI update frequency
-
-                except Exception as e:
-                    logger.error(f"[ERROR] {sym}: {e}")
-                    await asyncio.sleep(1)
-
-        except asyncio.CancelledError:
-            pass
-
-    tasks = [asyncio.create_task(consume(sym)) for sym in symbols[:5]]
+# ---------------------- Stream for a single symbol ----------------------
+async def stream_for_symbol(symbol: str, publisher, latency_publisher):
+    logger.info(f"[INFO] Starting stream task for {symbol}")
+    last_msg_time = None
 
     try:
-        await shutdown_event.wait()
-    finally:
-        for t in tasks:
-            t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        await publisher.close()
-        logger.info("[INFO] BookTicker publisher closed.")
-
-
-async def fetch_and_publish_klines(symbol: str):
-    publisher = ZMQPublisher("tcp://127.0.0.1:5556")
-    publisher.socket.linger = 0
-
-    async with aiohttp.ClientSession() as session:
-        candles = []
-        async for candle in fetch_historical_klines(session, symbol, interval="1m", limit=400):
+        async for payload in book_ticker_stream(symbol):
             if shutdown_event.is_set():
                 break
-            candles.append(candle)
 
-        if candles:
-            fb_bytes = encode_klines(candles)
-            await publisher.publish(f"klines.{symbol}", fb_bytes)
-            logger.info(f"[INFO] Published {len(candles)} historical candles for {symbol}")
+            now = int(time.time() * 1000)
+            latency = f"{now - last_msg_time} ms" if last_msg_time else "Loading..."
+            last_msg_time = now
 
-    await publisher.close()
-    logger.info("[INFO] Klines publisher closed.")
+            # Publish latency
+            await latency_publisher.publish("feed_latency", f"{symbol} {latency}".encode())
+            fb_bytes = encode_bookticker(payload)
+            await publisher.publish(f"bookticker.{symbol}", fb_bytes)
 
+            await asyncio.sleep(0.05)
 
-async def publish_latency(latency_publisher, payload: bytes):
-    """
-    Publish a pre-formatted latency payload to the latency feed.
-    Socket is long-lived and bound once.
-    """
-    try:
-        await latency_publisher.publish("feed_latency", payload)
+    except asyncio.CancelledError:
+        logger.info(f"[INFO] Stream task for {symbol} cancelled cleanly")
     except Exception as e:
-        logger.error(f"[ERROR] Failed to publish latency: {e}")
+        logger.exception(f"[ERROR] Unexpected error in stream_for_symbol({symbol}): {e}")
 
-
-
-async def control_server():
-    ctx = zmq.asyncio.Context()
-    socket = ctx.socket(zmq.REP)
-    socket.linger = 0
-    socket.bind("tcp://127.0.0.1:5560")
-
-    logger.info("[INFO] Control socket listening on tcp://127.0.0.1:5560")
-
+# ------------------- Historical Klines Task -------------------
+async def fetch_and_publish_klines(symbol: str, klines_publisher: ZMQPublisher):
     try:
-        while not shutdown_event.is_set():
-            try:
-                msg = await asyncio.wait_for(socket.recv_string(), timeout=1)
-                logger.info(f"[INFO] Control message received: {msg}")
+        async with aiohttp.ClientSession() as session:
+            candles = []
+            async for candle in fetch_historical_klines(session, symbol, interval="1m", limit=400):
+                if shutdown_event.is_set():
+                    break
+                candles.append(candle)
 
-                if msg.startswith("fire_klines"):
-                    parts = msg.strip().split()
-                    if len(parts) == 2:
-                        symbol = parts[1].lower()
-                        await fetch_and_publish_klines(symbol)
-                        await socket.send_string(f"OK: fired klines for {symbol}")
-                    else:
-                        await socket.send_string("ERROR: invalid command format")
-                else:
-                    await socket.send_string("ERROR: unknown command")
-            except asyncio.TimeoutError:
-                continue
+            if candles:
+                fb_bytes = encode_klines(candles)
+                await klines_publisher.publish(f"klines.{symbol}", fb_bytes)
+                logger.info(f"[INFO] Published {len(candles)} historical candles for {symbol}")
+
     except asyncio.CancelledError:
         pass
-    finally:
-        await socket.close()
-        logger.info("[INFO] Control server socket closed.")
+    except Exception as e:
+        logger.error(f"[ERROR] Klines task {symbol}: {e}")
+
+# ---------------------- REQ/REP Control Server ----------------------
+async def control_server(stream_tasks: list, publisher, latency_publisher, klines_publisher, rep_endpoint="tcp://127.0.0.1:5560"):
+    """
+    REQ/REP server: handles switch_symbol & fire_klines without blocking responses.
+    """
+    logger.info(f"[INFO] Control server listening at {rep_endpoint}")
+    context = zmq.asyncio.Context.instance()
+    socket = context.socket(zmq.REP)
+    socket.bind(rep_endpoint)
+
+    while not shutdown_event.is_set():
+        try:
+            msg = await socket.recv_string()
+            logger.info(f"[INFO] Control message received: {msg}")
+            parts = msg.strip().split()
+            if len(parts) != 2:
+                await socket.send_string("ERROR: invalid format")
+                continue
+
+            cmd, symbol = parts
+            symbol = symbol.lower()
+
+            if cmd == "switch_symbol":
+                try:
+                    logger.info(f"[INFO] Switching stream to symbol yaggaboo: {symbol}")
+
+                    # Cancel old streams
+                    old_tasks = stream_tasks.copy()
+                    for t in old_tasks:
+                        t.cancel()
+                    stream_tasks.clear()
+
+                    # Start new stream
+                    new_task = asyncio.create_task(stream_for_symbol(symbol, publisher, latency_publisher))
+                    stream_tasks.append(new_task)
+                    logger.info(f"[INFO] Stream task for {symbol} started")
+
+                    # Respond immediately
+                    await socket.send_string("OK")
+
+                    # Cleanup old tasks in background correctly
+                    async def cleanup(tasks):
+                        await asyncio.gather(*tasks, return_exceptions=True)
+
+                    asyncio.create_task(cleanup(old_tasks))
+                    logger.info(f"[INFO] switch_symbol for {symbol} completed!!")
+
+                except Exception as e:
+                    logger.exception(f"[ERROR] switch_symbol failed for {symbol}: {e}")
+                    # Only attempt to send error if socket is still usable
+                    try:
+                        await socket.send_string(f"ERROR: {e}")
+                    except zmq.error.ZMQError:
+                        logger.warning("ZMQ socket cannot send error message, skipping")
 
 
+            elif cmd == "fire_klines":
+                try:
+                    logger.info(f"[INFO] Fetching historical klines for {symbol}")
+                    # Run the fetch/publish task but wait here since it's usually quick
+                    await fetch_and_publish_klines(symbol, klines_publisher)
+                    await socket.send_string("OK")
+                except Exception as e:
+                    logger.error(f"[ERROR] Failed klines task for {symbol}: {e}")
+                    await socket.send_string(f"ERROR: {e}")
+
+            else:
+                logger.warning(f"[WARN] Unknown control command: {cmd}")
+                await socket.send_string(f"ERROR: unknown command {cmd}")
+
+        except asyncio.CancelledError:
+            logger.info("[INFO] Control server cancelled")
+            break
+        except Exception as e:
+            logger.exception(f"[ERROR] Exception in control_server: {e}")
+            await asyncio.sleep(0.1)
+
+    socket.close()
+    logger.info("[INFO] Control server exiting")
+
+
+# ------------------- Main -------------------
 async def main():
     symbols = await fetch_binance_symbols()
-    tasks = [
-        asyncio.create_task(stream_and_publish(symbols)),
-        asyncio.create_task(fetch_and_publish_klines(symbols[0])),
-        asyncio.create_task(control_server()),
-    ]
+
+    publisher = ZMQPublisher("tcp://127.0.0.1:5555")
+    latency_publisher = ZMQPublisher("tcp://127.0.0.1:5561")
+    klines_publisher = ZMQPublisher("tcp://127.0.0.1:5556")
+
+    stream_tasks = []
+
+    # Start initial streams
+    for sym in symbols[:2]:
+        task = asyncio.create_task(stream_for_symbol(sym, publisher, latency_publisher))
+        stream_tasks.append(task)
+
+    # Start control server
+    control_task = asyncio.create_task(control_server(stream_tasks, publisher, latency_publisher, klines_publisher))
+
+    # Fetch historical klines for first symbol
+    klines_task = asyncio.create_task(fetch_and_publish_klines(symbols[0], klines_publisher))
+
     await shutdown_event.wait()
-    for t in tasks:
+
+    # Cleanup
+    for t in stream_tasks:
         t.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-
-def shutdown_handler():
-    logger.info("[INFO] Shutdown signal received. Cleaning up...")
-    shutdown_event.set()
-
+    klines_task.cancel()
+    control_task.cancel()
+    await asyncio.gather(*stream_tasks, klines_task, control_task, return_exceptions=True)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("[INFO] Ctrl+C detected. Shutting down...")
         shutdown_event.set()
-

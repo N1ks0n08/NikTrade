@@ -1,43 +1,45 @@
 #include <vector>
+#include <deque>
 #include <fstream>
 #include <string>
 #include <filesystem>
 #include <thread>
 #include <chrono>
-#include <deque>
 #include <fmt/core.h>
 
-// util modules
+// Utils & Logging
 #include "utils/file_logger.hpp"
 
-// core modules
+// Core modules
 #include "core/tick.hpp"
 #include "core/binance_kline.hpp"
 #include "core/data_loader.hpp"
+
+// Networking
 #include "core/net/zmq_subscriber.hpp"
 #include "core/net/python_launcher.hpp"
 #include "core/net/zmq_control_client.hpp"
 
-// UI modules
+// UI
 #include "ui/core/init.hpp"
 #include "ui/windows/dataDisplay_window.hpp"
 #include "ui/windows/cryptoDataDisplay_window.hpp"
 #include "ui/windows/cryptoChartDisplay_window.hpp"
 #include "ui/windows/banner_window.hpp"
 
-// Data communication
-#include <boost/lockfree/spsc_queue.hpp>
+// FlatBuffers
 #include "../src/core/flatbuffers/Binance/binance_bookticker_generated.h"
 #include "../src/core/flatbuffers/Binance/binance_kline_generated.h"
 
-// ----------- USED FOR getExecutableDir() ---------------
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <imgui_internal.h>
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
+// --------------------------- Helpers ---------------------------
 fs::path getExecutableDir() {
 #ifdef _WIN32
     char buffer[MAX_PATH];
@@ -51,52 +53,19 @@ fs::path getExecutableDir() {
 #endif
 }
 
-void runHiddenCommand(const std::wstring& cmd)
-{
-    STARTUPINFOW si{};
-    PROCESS_INFORMATION pi{};
-    si.cb = sizeof(si);
-
-    // 👇 Hide window
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    // CreateProcess needs a writable buffer
-    std::wstring mutableCmd = cmd;
-
-    BOOL success = CreateProcessW(
-        nullptr,
-        mutableCmd.data(),  // command line
-        nullptr, nullptr,   // process/thread security
-        FALSE,              // inherit handles
-        CREATE_NO_WINDOW,   // absolutely no visible window
-        nullptr, nullptr,   // environment, cwd
-        &si, &pi
-    );
-
-    if (success) {
-        WaitForSingleObject(pi.hProcess, INFINITE);
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
-}
-
 void forceClosePorts(FileLogger& logger) {
 #ifdef _WIN32
-    logger.logInfo("[INFO] Forcibly closing any lingering ZMQ ports (hidden) ...");
-
-    runHiddenCommand(
-        L"powershell -Command \""
-        L"$ports = @(5555, 5556, 5560, 5561); "
-        L"$ports | ForEach-Object { "
-        L"Get-NetTCPConnection -LocalPort $_ -ErrorAction SilentlyContinue | "
-        L"ForEach-Object { "
-        L"try { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } catch {} "
-        L"} }\""
-    );
+    logger.logInfo("[INFO] Forcibly closing lingering ZMQ ports ...");
+    std::wstring cmd = L"powershell -Command \"$ports = @(5555, 5556, 5560, 5561); "
+                       L"$ports | ForEach-Object { Get-NetTCPConnection -LocalPort $_ -ErrorAction SilentlyContinue | "
+                       L"ForEach-Object { try { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } catch {} } }\"";
+    STARTUPINFOW si{}; PROCESS_INFORMATION pi{}; si.cb = sizeof(si); si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+    std::wstring mutableCmd = cmd;
+    if (CreateProcessW(nullptr, mutableCmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    }
 #else
-    logger.logInfo("[INFO] Forcibly closing any lingering ZMQ ports on Unix...");
-
     system("lsof -i :5555 -t | xargs -r kill -9");
     system("lsof -i :5556 -t | xargs -r kill -9");
     system("lsof -i :5560 -t | xargs -r kill -9");
@@ -104,73 +73,78 @@ void forceClosePorts(FileLogger& logger) {
 #endif
 }
 
+// --------------------------- Main ---------------------------
 int main() {
-    // --------------------- Initialize Logger ---------------------
+    // ------------------ Logger ------------------
     FileLogger logger("NikTrade.log");
-    logger.logInfo("Starting NikTrade application...");
+    logger.logInfo("Starting NikTrade...");
+
     forceClosePorts(logger);
 
-    // --------------------- Initialize window & UI ---------------------
+    // ------------------ Window/UI ------------------
     fs::path exeDir = getExecutableDir();
     GLFWwindow* window = initWindow(1000, 750, "NikTrade", exeDir);
-    if (!window) {
-        logger.logInfo("Failed to initialize window.");
-        return -1;
-    }
+    if (!window) { logger.logInfo("Failed to initialize window."); return -1; }
     logger.logInfo("Window initialized successfully.");
 
-    std::unique_ptr<NikTrade::PythonLauncher> pythonLauncher;
-    // --------------------- Launch Python Binance publisher ---------------------
+    // ------------------ Python Publisher ------------------
     fs::path pythonScript = exeDir / "python" / "main.py";
+    std::unique_ptr<NikTrade::PythonLauncher> pythonLauncher;
     if (!fs::exists(pythonScript)) {
         logger.logInfo(fmt::format("Python publisher not found at: {}", pythonScript.string()));
     } else {
-        logger.logInfo(fmt::format("Launching Python publisher: {}", pythonScript.string()));
-
         pythonLauncher = std::make_unique<NikTrade::PythonLauncher>(
             pythonScript.string(),
-            std::vector<std::string>{}, 
+            std::vector<std::string>{},
             "C:\\Users\\n1ksn\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"
         );
         pythonLauncher->start();
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::this_thread::sleep_for(std::chrono::seconds(2)); // allow Python to initialize
         logger.logInfo("Python publisher started.");
     }
 
-    // --------------------- Load JSON market data ---------------------
-    fs::path jsonFile = exeDir / "resources" / "SPY_2025.json";
-    std::ifstream file(jsonFile);
-    if (!file.is_open()) {
-        logger.logInfo(fmt::format("Failed to open JSON file at {}", jsonFile.string()));
+    // ------------------ Load Symbols ------------------
+    std::vector<std::string> cryptoSymbols;
+    fs::path symbolsFile = exeDir / "python" / "binance_symbols.json";
+    std::ifstream symbolsStream(symbolsFile);
+    if (!symbolsStream.is_open()) {
+        logger.logInfo(fmt::format("Failed to open symbols file at {}", symbolsFile.string()));
         return -1;
     }
+    json symbolsJson; symbolsStream >> symbolsJson;
+    for (const auto& symbol : symbolsJson) cryptoSymbols.push_back(symbol.get<std::string>());
+    logger.logInfo(fmt::format("Loaded {} crypto symbols.", cryptoSymbols.size()));
 
-    json jsonData;
-    file >> jsonData;
+    // ------------------ Load Tick Data ------------------
+    fs::path jsonFile = exeDir / "resources" / "SPY_2025.json";
+    std::ifstream file(jsonFile);
+    if (!file.is_open()) { logger.logInfo(fmt::format("Failed to open JSON file at {}", jsonFile.string())); return -1; }
+    json jsonData; file >> jsonData;
     std::vector<Tick> tickDataVector = json_to_tickDataVector(jsonData);
     logger.logInfo(fmt::format("Loaded {} ticks from JSON.", tickDataVector.size()));
 
-    // --------------------- Setup ZMQ subscribers ---------------------
-    Binance::ZMQSubscriber bookticker_sub(1024, "tcp://127.0.0.1:5555");
-    bookticker_sub.start();
-    Binance::ZMQSubscriber kline_sub(1024, "tcp://127.0.0.1:5556");
-    kline_sub.start();
-    Binance::ZMQSubscriber latency_sub(1024, "tcp://127.0.0.1:5561");
-    latency_sub.start();
-    logger.logInfo("ZMQ subscribers started for BookTicker, Kline, and custom latency streams.");
+    // ------------------ ZMQ Subscribers ------------------
+    Binance::ZMQSubscriber bookticker_sub(524288, "tcp://127.0.0.1:5555"); bookticker_sub.start();
+    Binance::ZMQSubscriber kline_sub(262144, "tcp://127.0.0.1:5556"); kline_sub.start();
+    Binance::ZMQSubscriber latency_sub(1024, "tcp://127.0.0.1:5561"); latency_sub.start();
+    logger.logInfo("ZMQ subscribers started.");
 
-    // --------------------- Storage ---------------------
-    std::deque<std::vector<uint8_t>> latestCryptoMessages;
+    ZMQControlClient controlClient("tcp://127.0.0.1:5560");
+    logger.logInfo("ZMQ Control Client connected.");
+
+    // ------------------ Storage ------------------
+    std::vector<uint8_t> latestCryptoMessage;
     std::deque<std::vector<uint8_t>> latestKlineMessages;
     std::deque<KlineData> klineDeque;
-    std::string latestLatencyMessage = "Latency: Loading...";  // holds the most recent latency value
+    std::string latestLatencyMessage = "Latency: Loading...";
 
+    std::deque<std::string> currentSymbol;
+    if (!cryptoSymbols.empty()) currentSymbol.push_back(cryptoSymbols[0]);
 
-    // --------------------- Flags & Timers ---------------------
     static auto lastKlineRequest = std::chrono::steady_clock::now();
     static const std::chrono::seconds requestInterval(5);
 
-    // --------------------- Main loop ---------------------
+    // ------------------ Main Loop ------------------
     while (!glfwWindowShouldClose(window)) {
         startImGuiFrame(window);
 
@@ -185,63 +159,42 @@ int main() {
                                           ImGuiWindowFlags_NoMove |
                                           ImGuiWindowFlags_NoBringToFrontOnFocus |
                                           ImGuiWindowFlags_NoBackground;
-
         ImGui::Begin("DockSpace_Window", nullptr, dockspaceFlags);
         ImGuiID dockspaceID = ImGui::GetID("MainDockSpace");
-        ImGui::DockSpace(dockspaceID, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::DockSpace(dockspaceID, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode);
         ImGui::End();
 
-        int width, height;
-        glfwGetWindowSize(window, &width, &height);
+        int width, height; glfwGetWindowSize(window, &width, &height);
 
-        // --------------------- Handle crypto messages ---------------------
+        // ------------------ Handle BookTicker ------------------
         std::vector<uint8_t> msg;
-        while (bookticker_sub.pop(msg)) {
-            latestCryptoMessages.emplace_back(std::move(msg));
-            if (latestCryptoMessages.size() > 50) latestCryptoMessages.pop_front();
+        if (bookticker_sub.pop(msg)) {
+            latestCryptoMessage = std::move(msg);
+            logger.logInfo("BookTicker msg received, size: " + std::to_string(latestCryptoMessage.size()));
         }
 
-        // --------------------- Handle latency messages ---------------------
+        // ------------------ Handle Latency ------------------
         std::vector<uint8_t> latency_msg;
         while (latency_sub.pop(latency_msg)) {
-            // Convert bytes to string
-            std::string msg(latency_msg.begin(), latency_msg.end());
-
-            // Split topic and payload: "feed_latency payload"
-            auto space_pos = msg.find(' ');
-            if (space_pos != std::string::npos) {
-                std::string topic = msg.substr(0, space_pos);        // "feed_latency"
-                std::string payload = msg.substr(space_pos + 1);     // e.g., "BTCUSDT 12 ms"
-
-                // Update the latest latency variable
-                latestLatencyMessage = payload;
-
-                // Optional: log for debugging
-                logger.logInfo("Updated latency for topic: " + topic);
-            } else {
-                // Handle malformed messages gracefully
-                logger.logInfo("Received malformed latency message: " + msg);
-            }
+            std::string str_msg(latency_msg.begin(), latency_msg.end());
+            auto space_pos = str_msg.find(' ');
+            if (space_pos != std::string::npos) latestLatencyMessage = str_msg.substr(space_pos + 1);
         }
 
-        // --------------------- Periodic Historical Klines Request ---------------------
+        // ------------------ Periodic Historical Klines ------------------
         auto now = std::chrono::steady_clock::now();
-        if (now - lastKlineRequest >= requestInterval) {
-            ZMQControlClient controlClient("tcp://127.0.0.1:5560");
-            if (controlClient.requestHistoricalKlines("fire_klines BTCUSDT")) {
-                logger.logInfo("[INFO] Periodic request for historical candles sent");
-            } else {
-                logger.logInfo("[WARN] Failed to request historical candles");
-            }
+        if (!currentSymbol.empty() && now - lastKlineRequest >= requestInterval) {
             lastKlineRequest = now;
+            std::string reply;
+            bool ok = controlClient.sendControlRequest(fmt::format("fire_klines {}", currentSymbol[0]), reply, logger, 1000);
+            if (!ok) logger.logInfo("[WARN] Historical klines request failed: " + reply);
         }
 
-        // --------------------- Read Kline messages continuously ---------------------
+        // ------------------ Read Kline Messages ------------------
         std::vector<uint8_t> kline_msg;
         while (kline_sub.pop(kline_msg)) {
             const Binance::Klines* fb_klines = Binance::GetKlines(kline_msg.data());
             if (!fb_klines || !fb_klines->klines()) continue;
-
             for (auto kl : *(fb_klines->klines())) {
                 KlineData k;
                 k.open_time  = kl->open_time();
@@ -253,46 +206,36 @@ int main() {
                 k.close_time = kl->close_time();
                 klineDeque.push_back(k);
             }
-
             while (klineDeque.size() > 500) klineDeque.pop_front();
-
-            logger.logInfo(fmt::format("[DEBUG] Added {} Klines. Deque size: {}", fb_klines->klines()->size(), klineDeque.size()));
         }
 
-        // --------------------- Render Banner & Windows ---------------------
+        // ------------------ Render UI ------------------
         bool binanceConnected = true;
-        bool zmqActive        = true;
+        bool zmqActive = true;
         NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage);
-
         dataDisplayWindow(window, width, height, tickDataVector);
-        cryptoDataDisplayWindow(window, width, height, latestCryptoMessages);
+        cryptoDataDisplayWindow(window, width, height, cryptoSymbols, latestCryptoMessage, controlClient, logger);
         cryptoChartDisplayWindow(window, width, height, klineDeque);
 
-        // --------------------- OpenGL Render ---------------------
         int fbWidth, fbHeight;
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
         glViewport(0, 0, fbWidth, fbHeight);
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // --------------------- Dock setup first frame ---------------------
         static bool firstFrame = true;
         if (firstFrame) {
             firstFrame = false;
             ImGui::DockBuilderRemoveNode(dockspaceID);
             ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_None);
 
-            ImGuiID dock_id_left, dock_id_right;
-            ImGuiID dock_id_top, dock_id_bottom;
-
+            ImGuiID dock_id_left, dock_id_right, dock_id_top, dock_id_bottom;
             ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Right, 0.33f, &dock_id_right, &dock_id_left);
             ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, &dock_id_bottom, &dock_id_top);
 
-            // Swap these two lines to change vertical order
             ImGui::DockBuilderDockWindow("Crypto Chart Display", dock_id_top);
             ImGui::DockBuilderDockWindow("Equity Data Display", dock_id_bottom);
             ImGui::DockBuilderDockWindow("Crypto Data Display", dock_id_right);
-            // NOTE: THE NAMES MUST MATCH THE WINDOW NAMES IN THEIR RESPECTIVE UI CODE
             ImGui::DockBuilderFinish(dockspaceID);
         }
 
@@ -301,23 +244,18 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    // --------------------- Cleanup ---------------------
+    // ------------------ Cleanup ------------------
     bookticker_sub.stop();
     kline_sub.stop();
     latency_sub.stop();
-    pythonLauncher->stop();
-
+    if (pythonLauncher) pythonLauncher->stop();
     forceClosePorts(logger);
-
     shutdownUI(window);
 
-    logger.logInfo("Window has been terminated. Exiting application.");
+    logger.logInfo("Application terminated cleanly.");
     return 0;
 }
 
 #ifdef _WIN32
-#include <windows.h>
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    return main();
-}
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) { return main(); }
 #endif

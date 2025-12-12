@@ -1,4 +1,5 @@
 #include "zmq_control_client.hpp"
+#include "utils/file_logger.hpp"
 #include <iostream>
 
 ZMQControlClient::ZMQControlClient(const std::string& endpoint)
@@ -12,10 +13,10 @@ ZMQControlClient::~ZMQControlClient() {
     context_.close();
 }
 
-bool ZMQControlClient::requestHistoricalKlines(const std::string& symbol, int timeoutMs) {
+bool ZMQControlClient::requestHistoricalKlines(const std::string& symbol, FileLogger &logger, int timeoutMs) {
     zmq::message_t request(symbol.c_str(), symbol.size());
     if (!socket_.send(request, zmq::send_flags::none)) {
-        std::cerr << "Failed to send request\n";
+        logger.logInfo("Failed to send request\n");
         return false;
     }
 
@@ -30,6 +31,29 @@ bool ZMQControlClient::requestHistoricalKlines(const std::string& symbol, int ti
         return replyStr == "OK";
     }
 
-    std::cerr << "Timeout waiting for control reply\n";
+    logger.logInfo("Timeout waiting for control reply\n");
+    return false;
+}
+
+bool ZMQControlClient::sendControlRequest(const std::string& requestStr, std::string& replyStr, FileLogger &logger, int timeoutMs) {
+    zmq::message_t request(requestStr.c_str(), requestStr.size());
+
+    if (!socket_.send(request, zmq::send_flags::none)) {
+        logger.logInfo("Failed to send request: " + requestStr + "\n");
+        return false;
+    }
+
+    // Poll for a reply
+    zmq::pollitem_t items[] = { {socket_, 0, ZMQ_POLLIN, 0} };
+    zmq::poll(items, 1, timeoutMs);
+
+    if (items[0].revents & ZMQ_POLLIN) {
+        zmq::message_t reply;
+        socket_.recv(reply);
+        replyStr = std::string(static_cast<char*>(reply.data()), reply.size());
+        return true;
+    }
+
+    logger.logInfo("Timeout waiting for control reply: " + requestStr + "\n");
     return false;
 }

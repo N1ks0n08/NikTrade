@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <zmq.hpp>
+#include "utils/file_logger.hpp"
 
 class ZMQControlClient {
 public:
@@ -8,7 +9,10 @@ public:
     ~ZMQControlClient();
 
     // Sends a request and optionally waits for a reply
-    bool requestHistoricalKlines(const std::string& symbol, int timeoutMs = 500);
+    bool requestHistoricalKlines(const std::string& symbol,FileLogger &logger, int timeoutMs = 500);
+
+    // Generic control request
+    bool sendControlRequest(const std::string& requestStr, std::string& replyStr, FileLogger& logger, int timeoutMs = 500);
 
 private:
     zmq::context_t context_;
