@@ -76,6 +76,20 @@ void forceClosePorts(FileLogger& logger) {
 // --------------------------- Main ---------------------------
 int main() {
     // ------------------ Logger ------------------
+    // Delete old log BEFORE creating the logger
+    if (fs::exists("NikTrade.log")) {
+        try {
+            fs::remove("NikTrade.log");
+        } catch (const std::exception& e) {
+            // Use logger-free thread-safe fallback: Write to Windows Debug output
+    #ifdef _WIN32
+            OutputDebugStringA(("Could not remove old log: " + std::string(e.what()) + "\n").c_str());
+    #else
+            std::cerr << "[WARN] Could not remove old log: " << e.what() << std::endl;
+    #endif
+        }
+    }
+
     FileLogger logger("NikTrade.log");
     logger.logInfo("Starting NikTrade...");
 

@@ -33,7 +33,7 @@ GLFWwindow* initWindow(int width, int height, const char* title, fs::path exeDir
 
     ImGuiIO& io = ImGui::GetIO();
     fs::path iniPath = exeDir / "imgui_layout.ini";
-    io.IniFilename = iniPath.string().c_str();
+    io.IniFilename = nullptr; // DISABLE AUTOMATIC INI FILENAME HANDLING
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
     // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // Enable multi-viewport
