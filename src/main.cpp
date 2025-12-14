@@ -110,7 +110,7 @@ int main() {
         pythonLauncher = std::make_unique<NikTrade::PythonLauncher>(
             pythonScript.string(),
             std::vector<std::string>{},
-            "C:\\Users\\n1ksn\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"
+            "python"
         );
         pythonLauncher->start();
         std::this_thread::sleep_for(std::chrono::seconds(2)); // allow Python to initialize
