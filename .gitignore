@@ -26,6 +26,7 @@ imgui.ini
 CMakeUserPresets.json
 
 # Generated data / API responses
+/resources
 AAPL_2025.json
 SPY_2025.json
 QQQ_2025.json
