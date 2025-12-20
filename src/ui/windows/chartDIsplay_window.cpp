@@ -1,4 +1,4 @@
-#include "cryptoChartDisplay_window.hpp"
+#include "chartDisplay_window.hpp"
 #include <inttypes.h>
 #include <imgui.h>
 #include <implot.h>
@@ -6,10 +6,10 @@
 #include <deque>
 #include <algorithm>
 
-void cryptoChartDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight,
+void chartDisplayWindow(GLFWwindow* window, int windowWidth, int windowHeight,
     const std::deque<KlineData>& klines)
 {
-    ImGui::Begin("Crypto Chart Display");
+    ImGui::Begin("Chart Display");
 
     if (klines.empty()) {
         ImGui::Text("No candles available.");

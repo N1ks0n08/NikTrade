@@ -5,7 +5,7 @@
 #include <core/flatbuffers/Binance/binance_kline_generated.h>
 #include <deque>
 
-void cryptoChartDisplayWindow(GLFWwindow* window,
+void chartDisplayWindow(GLFWwindow* window,
                               int windowWidth,
                               int windowHeight,
                               const std::deque<KlineData>& klines);

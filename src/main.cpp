@@ -23,8 +23,8 @@
 // UI
 #include "ui/core/init.hpp"
 #include "ui/windows/dataDisplay_window.hpp"
-#include "ui/windows/cryptoDataDisplay_window.hpp"
-#include "ui/windows/cryptoChartDisplay_window.hpp"
+#include "ui/windows/orderBookDisplay_window.hpp"
+#include "ui/windows/chartDisplay_window.hpp"
 #include "ui/windows/banner_window.hpp"
 
 // FlatBuffers
@@ -227,9 +227,9 @@ int main() {
         bool binanceConnected = true;
         bool zmqActive = true;
         NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage);
-        dataDisplayWindow(window, width, height, tickDataVector);
-        cryptoDataDisplayWindow(window, width, height, cryptoSymbols, latestCryptoMessage, controlClient, logger);
-        cryptoChartDisplayWindow(window, width, height, klineDeque);
+        // dataDisplayWindow(window, width, height, tickDataVector); // TESTING PURPOSES
+        orderBookDisplayWindow(window, width, height, cryptoSymbols, latestCryptoMessage, controlClient, logger);
+        chartDisplayWindow(window, width, height, klineDeque);
 
         int fbWidth, fbHeight;
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
@@ -247,9 +247,9 @@ int main() {
             ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Right, 0.33f, &dock_id_right, &dock_id_left);
             ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, &dock_id_bottom, &dock_id_top);
 
-            ImGui::DockBuilderDockWindow("Crypto Chart Display", dock_id_top);
-            ImGui::DockBuilderDockWindow("Equity Data Display", dock_id_bottom);
-            ImGui::DockBuilderDockWindow("Crypto Data Display", dock_id_right);
+            ImGui::DockBuilderDockWindow("Chart Display", dock_id_top);
+            // ImGui::DockBuilderDockWindow("Equity Data Display", dock_id_bottom); // TESTING PURPOSES
+            ImGui::DockBuilderDockWindow("Orderbook Display", dock_id_right);
             ImGui::DockBuilderFinish(dockspaceID);
         }
 

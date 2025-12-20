@@ -1,4 +1,4 @@
-#include "cryptoDataDisplay_window.hpp"
+#include "orderBookDisplay_window.hpp"
 #include <imgui.h>
 #include <fmt/core.h>
 #include <vector>
@@ -7,7 +7,7 @@
 #include "../../core/flatbuffers/Binance/binance_bookticker_generated.h"
 #include "../../core/net/zmq_control_client.hpp"
 
-void cryptoDataDisplayWindow(
+void orderBookDisplayWindow(
     GLFWwindow* window,
     int windowWidth,
     int windowHeight,
@@ -19,7 +19,7 @@ void cryptoDataDisplayWindow(
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2(900, 350), ImGuiCond_Once);
 
-    bool windowOpen = ImGui::Begin("Crypto Data Display", nullptr, ImGuiWindowFlags_NoCollapse);
+    bool windowOpen = ImGui::Begin("Orderbook Display", nullptr, ImGuiWindowFlags_NoCollapse);
     if (!windowOpen) {
         ImGui::End();
         return;

@@ -38,8 +38,8 @@ add_executable(NikTrade
     src/ui/core/init.cpp
     src/ui/windows/banner_window.cpp
     src/ui/windows/dataDisplay_window.cpp
-    src/ui/windows/cryptoDataDisplay_window.cpp
-    src/ui/windows/cryptoChartDisplay_window.cpp
+    src/ui/windows/orderBookDisplay_window.cpp
+    src/ui/windows/chartDisplay_window.cpp
     src/ui/plots/price_plot.cpp
     src/ui/plots/sma_plot.cpp
     src/ui/plots/ema_plot.cpp

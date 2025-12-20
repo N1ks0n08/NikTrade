@@ -6,7 +6,7 @@
 #include "core/net/zmq_control_client.hpp"
 #include <GLFW/glfw3.h>
 
-void cryptoDataDisplayWindow(
+void orderBookDisplayWindow(
     GLFWwindow* window,
     int windowWidth,
     int windowHeight,
