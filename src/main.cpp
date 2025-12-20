@@ -118,7 +118,8 @@ int main() {
     }
 
     // ------------------ Load Symbols ------------------
-    std::vector<std::string> cryptoSymbols;
+    std::vector<std::string> symbols;
+    symbols.reserve(14000); // Reserve space for symbols from Binance + NASDAQ Basic securities
     fs::path symbolsFile = exeDir / "python" / "binance_symbols.json";
     std::ifstream symbolsStream(symbolsFile);
     if (!symbolsStream.is_open()) {
@@ -126,9 +127,10 @@ int main() {
         return -1;
     }
     json symbolsJson; symbolsStream >> symbolsJson;
-    for (const auto& symbol : symbolsJson) cryptoSymbols.push_back(symbol.get<std::string>());
-    logger.logInfo(fmt::format("Loaded {} crypto symbols.", cryptoSymbols.size()));
+    for (const auto& symbol : symbolsJson) symbols.push_back(symbol.get<std::string>());
+    logger.logInfo(fmt::format("Loaded {} symbols.", symbols.size()));
 
+    /*
     // ------------------ Load Tick Data ------------------
     fs::path jsonFile = exeDir / "resources" / "SPY_2025.json";
     std::ifstream file(jsonFile);
@@ -136,7 +138,7 @@ int main() {
     json jsonData; file >> jsonData;
     std::vector<Tick> tickDataVector = json_to_tickDataVector(jsonData);
     logger.logInfo(fmt::format("Loaded {} ticks from JSON.", tickDataVector.size()));
-
+    */
     // ------------------ ZMQ Subscribers ------------------
     Binance::ZMQSubscriber bookticker_sub(524288, "tcp://127.0.0.1:5555"); bookticker_sub.start();
     Binance::ZMQSubscriber kline_sub(262144, "tcp://127.0.0.1:5556"); kline_sub.start();
@@ -153,7 +155,7 @@ int main() {
     std::string latestLatencyMessage = "Latency: Loading...";
 
     std::deque<std::string> currentSymbol;
-    if (!cryptoSymbols.empty()) currentSymbol.push_back(cryptoSymbols[0]);
+    if (!symbols.empty()) currentSymbol.push_back(symbols[0]);
 
     static auto lastKlineRequest = std::chrono::steady_clock::now();
     static const std::chrono::seconds requestInterval(5);
@@ -228,7 +230,7 @@ int main() {
         bool zmqActive = true;
         NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage);
         // dataDisplayWindow(window, width, height, tickDataVector); // TESTING PURPOSES
-        orderBookDisplayWindow(window, width, height, cryptoSymbols, latestCryptoMessage, controlClient, logger);
+        orderBookDisplayWindow(window, width, height, symbols, latestCryptoMessage, controlClient, logger);
         chartDisplayWindow(window, width, height, klineDeque);
 
         int fbWidth, fbHeight;

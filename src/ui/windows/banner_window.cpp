@@ -8,7 +8,7 @@ void bannerWindow(bool binanceConnected, bool zmqActive, std::string latency_mes
 
     // Position at top of screen, full width
     ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 45));
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, 90));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
@@ -24,11 +24,11 @@ void bannerWindow(bool binanceConnected, bool zmqActive, std::string latency_mes
                      ImGuiWindowFlags_NoCollapse |
                      ImGuiWindowFlags_NoDocking)) {
 
-        ImGui::SetCursorPosY(12);
+        ImGui::SetCursorPosY(25);
 
         // ---- Left side: App name ----
         ImGui::TextColored(ImVec4(0.35f, 0.7f, 1.0f, 1.0f), "NikTrade");
-        ImGui::SameLine(120);
+        ImGui::SameLine(250);
         ImGui::Text("Real-Time Quant Dashboard");
 
         // ---- Vertical line divider ----

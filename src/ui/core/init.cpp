@@ -8,70 +8,83 @@
 namespace fs = std::filesystem;
 
 GLFWwindow* initWindow(int width, int height, const char* title, fs::path exeDir) {
-    /* Initialize the library: (REQUIRED BEFORE GLFW FUNCTIONS CAN BE USED) */
+    /* Initialize the library */
     if (!glfwInit()) { fmt::print("Error: GLFW initialization failed..."); return nullptr; }
 
-    /*Create a windowed mode window and its OpenGL context*/
-    /* Make it frameless for a more sleek appearance */
     glfwWindowHint(GLFW_DECORATED, GLFW_TRUE);
     glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);
 
     GLFWwindow* window = glfwCreateWindow(width, height, title, nullptr, nullptr);
-
-    /* Check if window was successfully created or no */
     if (!window) { glfwTerminate(); return nullptr; }
 
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
-    gladLoadGL(); /* VERY CRITICAL BEFORE STARTING WITH IMGUI INITIALIZATION!!! */
+    gladLoadGL(); 
 
-    /*Initialization of ImGui*/
+    /* ImGui Initialization */
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImPlot::CreateContext(); // SEPARATE ImPlot CONTEXT REQUIRED TO START
-
+    ImPlot::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO();
     fs::path iniPath = exeDir / "imgui_layout.ini";
-    io.IniFilename = nullptr; // DISABLE AUTOMATIC INI FILENAME HANDLING
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // IF using Docking Branch
-    // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;    // Enable multi-viewport
+    io.IniFilename = nullptr; 
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; 
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; 
+
+    // Set font size to 30
+    float fontSize = 30.0f;
+#ifdef _WIN32
+    const char* fontPath = "C:/Windows/Fonts/Arial.ttf";
+#else
+    const char* fontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+#endif
+    if (fs::exists(fontPath)) {
+        io.FontDefault = io.Fonts->AddFontFromFileTTF(fontPath, fontSize);
+    } else {
+        io.FontDefault = io.Fonts->AddFontDefault(); // fallback
+    }
 
     // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);  // Install GLFW callbacks
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init();
+
+    // Adjust style for readability
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 15.0f;
+    style.FrameRounding = 5.0f;
+    style.GrabRounding = 5.0f;
+    style.WindowBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
 
     return window;
 }
 
 void startImGuiFrame(GLFWwindow* window) {
-    /* Poll events */
     glfwPollEvents();
-
-    // Start ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // Optional: configure style each frame
     ImGuiStyle& style = ImGui::GetStyle();
-    style.WindowRounding = 20.0f;
-    style.Colors[ImGuiCol_WindowBg].w = 0.0f;  // fully transparent background
+    style.Colors[ImGuiCol_WindowBg].w = 0.0f; // fully transparent background
 }
 
 void endImGuiFrame() {
-    // Render ImGui
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    // Optional: update ImGui viewports if enabled
+    // if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+    //     ImGui::UpdatePlatformWindows();
+    //     ImGui::RenderPlatformWindowsDefault();
+    // }
 }
 
 void shutdownUI(GLFWwindow* window) {
-    /* Termination process */
-    // ImGui::SaveIniSettingsToDisk(ImGui::GetIO().IniFilename); // SAVE THE imgui_layout.ini FOR LATER
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
-    ImPlot::DestroyContext(); // REQUIRED BEFORE ImGui CONTEXT DELETION
+    ImPlot::DestroyContext();
     ImGui::DestroyContext();
     glfwDestroyWindow(window);
     glfwTerminate();
