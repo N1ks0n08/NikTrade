@@ -14,6 +14,7 @@
 #include "core/tick.hpp"
 #include "core/binance_kline.hpp"
 #include "core/data_loader.hpp"
+#include "core/window_state.hpp"
 
 // Networking
 #include "core/net/zmq_subscriber.hpp"
@@ -149,6 +150,12 @@ int main() {
     logger.logInfo("ZMQ Control Client connected.");
 
     // ------------------ Storage ------------------
+    std::vector<SymbolRequest> pendingRRequests; // Symbols requested by windows
+    pendingRRequests.reserve(10); // Reserve space for symbol requests from windows per main loop iteration
+
+    std::vector<WindowSymbol> activeWindows; // Symbols currently being displayed in windows
+    activeWindows.reserve(50); // Reserve space for symbols being displayed (Max of 100 symbols)
+
     std::vector<uint8_t> latestCryptoMessage;
     std::deque<std::vector<uint8_t>> latestKlineMessages;
     std::deque<KlineData> klineDeque;
