@@ -78,6 +78,11 @@ void orderBookDisplayWindow(
     ImGui::Dummy(ImVec2(0, 15));
 
     // -------------------------
+    // Live Ticker Display
+    // -------------------------
+    
+
+    // -------------------------
     // Live Ticker Decode
     // -------------------------
     if (!latestCryptoMessage.empty()) {

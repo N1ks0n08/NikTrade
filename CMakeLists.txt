@@ -21,6 +21,8 @@ include_directories(src/)
 add_executable(NikTrade 
     src/main.cpp
     src/core/data_loader.cpp
+    src/core/BinanceBookTickerDecoder.cpp
+    src/core/SymbolRequest.cpp
     src/core/tech_indicators/sma.cpp
     src/core/tech_indicators/ema.cpp
     src/core/tech_indicators/rsi.cpp

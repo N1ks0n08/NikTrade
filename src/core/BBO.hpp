@@ -1,3 +1,4 @@
+#pragma once
 #include <string>
 
 // Normalized data-agnostic BBO (Best Bid and Offer) data structure

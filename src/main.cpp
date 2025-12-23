@@ -15,6 +15,9 @@
 #include "core/binance_kline.hpp"
 #include "core/data_loader.hpp"
 #include "core/window_state.hpp"
+#include "core/BBO.hpp"
+#include "core/BinanceBookTickerDecoder.hpp"
+#include "core/SymbolRequest.hpp"
 
 // Networking
 #include "core/net/zmq_subscriber.hpp"
