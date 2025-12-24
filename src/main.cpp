@@ -172,6 +172,25 @@ int main() {
 
     // ------------------ Main Loop ------------------
     while (!glfwWindowShouldClose(window)) {
+        // Execute any pending symbol requests from windows
+        while (!pendingRRequests.empty()) {
+            for (const SymbolRequest& req : pendingRRequests) {
+                std::string reply;
+                bool ok = controlClient.sendControlRequest(
+                    fmt::format("switch_symbol {}", req.requestedSymbol),
+                    reply,
+                    logger,
+                    500
+                );
+
+                if (ok) logger.logInfo(fmt::format("[INFO] Switched symbol: {}", reply));
+                else logger.logInfo("[WARN] Failed to switch symbol.");
+            }
+        }
+
+        // All processed, clear pending requests
+        pendingRRequests.clear();
+
         startImGuiFrame(window);
 
         float bannerHeight = 45.0f;
