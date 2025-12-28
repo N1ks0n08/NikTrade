@@ -12,9 +12,12 @@ void orderBookDisplayWindow(
     int windowWidth,
     int windowHeight,
     const std::vector<std::string>& availableSymbols,
-    const std::vector<uint8_t>& latestCryptoMessage,
-    ZMQControlClient& controlClient,
-    FileLogger& logger
+    //const std::vector<uint8_t>& latestCryptoMessage,
+    //ZMQControlClient& controlClient,
+    FileLogger& logger,
+    std::vector<SymbolRequest>& pendingRRequests,
+    std::vector<WindowBBO>& activeBBOWindows,
+    int& windowID
 ) {
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2(900, 350), ImGuiCond_Once);
@@ -40,7 +43,7 @@ void orderBookDisplayWindow(
     auto isValidSymbol = [&](const std::string& s) {
         return std::find(availableSymbols.begin(), availableSymbols.end(), s) != availableSymbols.end();
     };
-
+    /*
     auto trySendChange = [&]() {
         std::string symbol(searchBuf);
         if (!isValidSymbol(symbol)) {
@@ -58,9 +61,27 @@ void orderBookDisplayWindow(
 
         if (ok) logger.logInfo(fmt::format("[INFO] Switched symbol: {}", reply));
         else logger.logInfo("[WARN] Failed to switch symbol.");
+    }; */
+
+    auto trySendChange = [&]() {
+        std::string symbol(searchBuf);
+        if (!isValidSymbol(symbol)) {
+            logger.logInfo("[WARN] Invalid symbol, ignoring request.");
+            return;
+        }
+
+        // Create and store the symbol request
+        SymbolRequest req;
+        req.windowID = windowID;
+        req.requestedSymbol = symbol;
+        req.requestType = "stream";
+
+        pendingRRequests.emplace_back(req);
     };
 
     ImGui::SameLine();
+
+    // Implement 1.5 second cooldown for the button LATER
     if (ImGui::Button("Select")) { trySendChange(); }
     if (enterPressed) { trySendChange(); }
 
@@ -76,12 +97,8 @@ void orderBookDisplayWindow(
     }
     ImGui::EndChild();
     ImGui::Dummy(ImVec2(0, 15));
-
-    // -------------------------
-    // Live Ticker Display
-    // -------------------------
     
-
+    /*
     // -------------------------
     // Live Ticker Decode
     // -------------------------
@@ -108,6 +125,28 @@ void orderBookDisplayWindow(
             ImGui::Text("Invalid FlatBuffer data received.");
         }
     } else {
+        ImGui::Text("Waiting for live data...");
+    }
+    */
+
+    // -------------------------
+    // Live Data Display
+    // -------------------------
+    if (windowID < activeBBOWindows.size()) {
+        if (!activeBBOWindows[windowID].currentBBO.error.empty()) {
+            ImGui::Text("Error retrieving BBO data: %s", activeBBOWindows[windowID].currentBBO.error.c_str());
+        } else {
+            ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "%s", activeBBOWindows[windowID].currentBBO.symbol.c_str());
+            ImGui::SameLine();
+            ImGui::Text("Bid: %.4f (%.2f) | Ask: %.4f (%.2f)",
+                activeBBOWindows[windowID].currentBBO.bid_price,
+                activeBBOWindows[windowID].currentBBO.bid_quantity,
+                activeBBOWindows[windowID].currentBBO.ask_price,
+                activeBBOWindows[windowID].currentBBO.ask_quantity
+            );
+        }
+    } else {
+        logger.logInfo("No active BBO data for this window. (Does this index exist?)");
         ImGui::Text("Waiting for live data...");
     }
 

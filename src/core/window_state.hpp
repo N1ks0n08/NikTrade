@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "core/BBO.hpp"
 
 // Intent: what a window wants to view
 struct SymbolRequest {
@@ -9,7 +10,7 @@ struct SymbolRequest {
 };
 
 // Active window state: what symbol each window is currently assigned
-struct WindowSymbol {
+struct WindowBBO {
     int windowID;           // Unique ID of the window
-    std::string activeSymbol;    // The currently active symbol
+    BBO currentBBO;      // Current BBO data for the window
 };

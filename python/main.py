@@ -98,7 +98,8 @@ async def fetch_and_publish_klines(symbol: str, klines_publisher: ZMQPublisher):
 # ---------------------- REQ/REP Control Server ----------------------
 async def control_server(stream_tasks: list, publisher, latency_publisher, klines_publisher, rep_endpoint="tcp://127.0.0.1:5560"):
     """
-    REQ/REP server: handles switch_symbol & fire_klines without blocking responses.
+    REQ/REP server: handles start_symbol & fire_klines without blocking responses.
+    Port: 5560
     """
     logger.info(f"[INFO] Control server listening at {rep_endpoint}")
     context = zmq.asyncio.Context.instance()
@@ -117,9 +118,9 @@ async def control_server(stream_tasks: list, publisher, latency_publisher, kline
             cmd, symbol = parts
             symbol = symbol.lower()
 
-            if cmd == "switch_symbol":
+            if cmd == "start_symbol":
                 try:
-                    logger.info(f"[INFO] Switching stream to symbol yaggaboo: {symbol}")
+                    logger.info(f"[INFO] Starting stream to symbol: {symbol}")
 
                     # Cancel old streams
                     old_tasks = stream_tasks.copy()

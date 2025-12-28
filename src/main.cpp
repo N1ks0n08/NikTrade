@@ -153,15 +153,23 @@ int main() {
     logger.logInfo("ZMQ Control Client connected.");
 
     // ------------------ Storage ------------------
+    std::vector<int> activeWindowIDs; // IDs of currently active windows
+    activeWindowIDs.reserve(50); // Reserve space for windowIDs (Max of 100 symbols)
+    activeWindowIDs.emplace_back(0); // Start with window ID 0 active
+
     std::vector<SymbolRequest> pendingRRequests; // Symbols requested by windows
     pendingRRequests.reserve(10); // Reserve space for symbol requests from windows per main loop iteration
 
-    std::vector<WindowSymbol> activeWindows; // Symbols currently being displayed in windows
-    activeWindows.reserve(50); // Reserve space for symbols being displayed (Max of 100 symbols)
+    // THIS IS ACCESSED BY WINDOW ID
+    std::vector<WindowBBO> activeBBOWindows; // Symbols currently being displayed in windows
+    activeBBOWindows.reserve(50); // Reserve space for symbols being displayed (Max of 100 symbols)
+    activeBBOWindows.emplace_back(WindowBBO{0, BBO{}}); // Start with window ID 0
 
-    std::vector<uint8_t> latestCryptoMessage;
+    std::vector<uint8_t> latestFlatbufferMessage;
+
     std::deque<std::vector<uint8_t>> latestKlineMessages;
     std::deque<KlineData> klineDeque;
+
     std::string latestLatencyMessage = "Latency: Loading...";
 
     std::deque<std::string> currentSymbol;
@@ -173,23 +181,30 @@ int main() {
     // ------------------ Main Loop ------------------
     while (!glfwWindowShouldClose(window)) {
         // Execute any pending symbol requests from windows
-        while (!pendingRRequests.empty()) {
+        if (!pendingRRequests.empty()) {
             for (const SymbolRequest& req : pendingRRequests) {
                 std::string reply;
                 bool ok = controlClient.sendControlRequest(
-                    fmt::format("switch_symbol {}", req.requestedSymbol),
+                    fmt::format("start_symbol {}", req.requestedSymbol),
                     reply,
                     logger,
                     500
                 );
 
-                if (ok) logger.logInfo(fmt::format("[INFO] Switched symbol: {}", reply));
-                else logger.logInfo("[WARN] Failed to switch symbol.");
+                //BBO bbo = decodeToBBO(latestFlatbufferMessage, logger);
+                // handle activeWindows state
+                if (ok) {
+                    logger.logInfo(fmt::format("[INFO] Start symbol: {}", reply));
+                    activeBBOWindows[req.windowID] = WindowBBO{req.windowID, BBO{}};
+                }
+                else {
+                    logger.logInfo("[WARN] Failed to switch symbol.");
+                    activeBBOWindows[req.windowID] = WindowBBO{req.windowID, BBO{ .error = "Failed to start symbol stream." }};
+                }
             }
+            // All processed, clear pending requests
+            pendingRRequests.clear();
         }
-
-        // All processed, clear pending requests
-        pendingRRequests.clear();
 
         startImGuiFrame(window);
 
@@ -214,8 +229,13 @@ int main() {
         // ------------------ Handle BookTicker ------------------
         std::vector<uint8_t> msg;
         if (bookticker_sub.pop(msg)) {
-            latestCryptoMessage = std::move(msg);
-            logger.logInfo("BookTicker msg received, size: " + std::to_string(latestCryptoMessage.size()));
+            latestFlatbufferMessage = std::move(msg);
+            logger.logInfo("BookTicker msg received, size: " + std::to_string(latestFlatbufferMessage.size()));
+        }
+
+        // ------------------ Decode latest BBO for all windows ------------------
+        for (auto& win : activeBBOWindows) {
+            win.currentBBO = decodeToBBO(latestFlatbufferMessage, logger);
         }
 
         // ------------------ Handle Latency ------------------
@@ -259,7 +279,9 @@ int main() {
         bool zmqActive = true;
         NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage);
         // dataDisplayWindow(window, width, height, tickDataVector); // TESTING PURPOSES
-        orderBookDisplayWindow(window, width, height, symbols, latestCryptoMessage, controlClient, logger);
+        for (auto& win : activeBBOWindows) {
+            orderBookDisplayWindow(window, width, height, symbols, logger, pendingRRequests, activeBBOWindows, win.windowID);
+        }
         chartDisplayWindow(window, width, height, klineDeque);
 
         int fbWidth, fbHeight;
