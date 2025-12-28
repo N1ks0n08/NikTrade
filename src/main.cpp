@@ -153,9 +153,9 @@ int main() {
     logger.logInfo("ZMQ Control Client connected.");
 
     // ------------------ Storage ------------------
-    std::vector<int> activeWindowIDs; // IDs of currently active windows
-    activeWindowIDs.reserve(50); // Reserve space for windowIDs (Max of 100 symbols)
-    activeWindowIDs.emplace_back(0); // Start with window ID 0 active
+    //std::vector<int> activeWindowIDs; // IDs of currently active windows
+    //activeWindowIDs.reserve(50); // Reserve space for windowIDs (Max of 100 symbols)
+    //activeWindowIDs.emplace_back(0); // Start with window ID 0 active
 
     std::vector<SymbolRequest> pendingRRequests; // Symbols requested by windows
     pendingRRequests.reserve(10); // Reserve space for symbol requests from windows per main loop iteration
