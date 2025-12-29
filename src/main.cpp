@@ -163,7 +163,7 @@ int main() {
     // THIS IS ACCESSED BY WINDOW ID
     std::vector<WindowBBO> activeBBOWindows; // Symbols currently being displayed in windows
     activeBBOWindows.reserve(50); // Reserve space for symbols being displayed (Max of 100 symbols)
-    activeBBOWindows.emplace_back(WindowBBO{0, BBO{}}); // Start with window ID 0
+    activeBBOWindows.emplace_back(WindowBBO{true, 0, BBO{}}); // Start with window ID 0
 
     std::vector<uint8_t> latestFlatbufferMessage;
 
@@ -195,11 +195,11 @@ int main() {
                 // handle activeWindows state
                 if (ok) {
                     logger.logInfo(fmt::format("[INFO] Start symbol: {}", reply));
-                    activeBBOWindows[req.windowID] = WindowBBO{req.windowID, BBO{}};
+                    activeBBOWindows[req.windowID] = WindowBBO{true, req.windowID, decodeToBBO(latestFlatbufferMessage, logger)}; // verbose/unnecessary
                 }
                 else {
                     logger.logInfo("[WARN] Failed to switch symbol.");
-                    activeBBOWindows[req.windowID] = WindowBBO{req.windowID, BBO{ .error = "Failed to start symbol stream." }};
+                    activeBBOWindows[req.windowID].currentBBO.error = "Failed to start symbol stream.";
                 }
             }
             // All processed, clear pending requests
@@ -280,6 +280,7 @@ int main() {
         NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage);
         // dataDisplayWindow(window, width, height, tickDataVector); // TESTING PURPOSES
         for (auto& win : activeBBOWindows) {
+            if (!win.active) continue;
             orderBookDisplayWindow(window, width, height, symbols, logger, pendingRRequests, activeBBOWindows, win.windowID);
         }
         chartDisplayWindow(window, width, height, klineDeque);
