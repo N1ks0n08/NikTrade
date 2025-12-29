@@ -8,7 +8,7 @@ A minimalist, display-only dashboard for visualizing quantitative analyses of ex
 
 > Real-time order book and chart display
 
-[![NikTrade Demo](.github/NikTrade_demo_preview.png)](.github/NikTrade_demo.mp4)
+![NikTrade Demo](.github/NikTrade_demo_gif.gif)
 
 ## Platforms
 
