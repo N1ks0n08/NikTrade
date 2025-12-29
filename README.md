@@ -6,11 +6,9 @@
 
 A minimalist, display-only dashboard for visualizing quantitative analyses of exchange-traded equities using quantitative methods. Designed to present clear, data-driven insights without unnecessary complexity.
 
-<!-- ![Application Screenshot](.github/NikTradeGif2.gif) -->
+> Real-time order book and chart display
 
-![Application Screenshot](https://github.com/N1ks0n08/NikTrade/blob/master/.github/NikTradeGif2.gif?raw=true)
-
-<!-- <img src=".github/NikTradeGif2.gif" /> -->
+[![NikTrade Demo](.github/NikTrade_demo_preview.png)](.github/NikTrade_demo.mp4)
 
 ## Platforms
 
