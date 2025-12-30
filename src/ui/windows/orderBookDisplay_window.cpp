@@ -19,11 +19,36 @@ void orderBookDisplayWindow(
     std::vector<WindowBBO>& activeBBOWindows,
     int& windowID
 ) {
+
     ImGui::SetNextWindowPos(ImVec2(60, 60), ImGuiCond_Once);
     ImGui::SetNextWindowSize(ImVec2(900, 350), ImGuiCond_Once);
 
-    bool windowOpen = ImGui::Begin("Orderbook Display", nullptr, ImGuiWindowFlags_NoCollapse);
+    // Track window open state
+    bool windowOpen = true;
+    if (windowID < activeBBOWindows.size()) {
+        windowOpen = activeBBOWindows[windowID].active;
+    }
+
+    // Begin ImGui window with close button support
+    if (!ImGui::Begin("Orderbook Display", &windowOpen, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        return;
+    }
+
+    // If user clicked the 'X', mark window inactive and return
     if (!windowOpen) {
+        if (windowID < activeBBOWindows.size()) {
+            activeBBOWindows[windowID].active = false;
+
+            // Tell backend to stop the stream
+            SymbolRequest req;
+            req.windowID = windowID;
+            req.requestedSymbol = activeBBOWindows[windowID].desiredSymbol;
+            req.requestType = "close_stream";
+
+            pendingRRequests.emplace_back(req);
+        }
+
         ImGui::End();
         return;
     }
@@ -37,34 +62,21 @@ void orderBookDisplayWindow(
     // -------------------------
     // Symbol Search Box
     // -------------------------
-    static char searchBuf[32] = "";
-    bool enterPressed = ImGui::InputText("Symbol", searchBuf, IM_ARRAYSIZE(searchBuf), ImGuiInputTextFlags_EnterReturnsTrue);
+    // Per-window search buffer
+    static std::vector<std::array<char, 32>> searchBuffers;
+    if (searchBuffers.size() <= windowID) searchBuffers.resize(windowID + 1);
+    auto& searchBuf = searchBuffers[windowID];
+
+    // Unique label per window
+    bool enterPressed = ImGui::InputText(("Symbol##" + std::to_string(windowID)).c_str(), searchBuf.data(), searchBuf.size(), ImGuiInputTextFlags_EnterReturnsTrue);
+
 
     auto isValidSymbol = [&](const std::string& s) {
         return std::find(availableSymbols.begin(), availableSymbols.end(), s) != availableSymbols.end();
     };
-    /*
+    
     auto trySendChange = [&]() {
-        std::string symbol(searchBuf);
-        if (!isValidSymbol(symbol)) {
-            logger.logInfo("[WARN] Invalid symbol, ignoring request.");
-            return;
-        }
-
-        std::string reply;
-        bool ok = controlClient.sendControlRequest(
-            fmt::format("switch_symbol {}", symbol),
-            reply,
-            logger,
-            500
-        );
-
-        if (ok) logger.logInfo(fmt::format("[INFO] Switched symbol: {}", reply));
-        else logger.logInfo("[WARN] Failed to switch symbol.");
-    }; */
-
-    auto trySendChange = [&]() {
-        std::string symbol(searchBuf);
+        std::string symbol(searchBuf.data());
         if (!isValidSymbol(symbol)) {
             logger.logInfo("[WARN] Invalid symbol, ignoring request.");
             return;
@@ -74,7 +86,7 @@ void orderBookDisplayWindow(
         SymbolRequest req;
         req.windowID = windowID;
         req.requestedSymbol = symbol;
-        req.requestType = "stream";
+        req.requestType = "start_stream";
 
         pendingRRequests.emplace_back(req);
     };
@@ -82,52 +94,25 @@ void orderBookDisplayWindow(
     ImGui::SameLine();
 
     // Implement 1.5 second cooldown for the button LATER
-    if (ImGui::Button("Select")) { trySendChange(); }
+    if (ImGui::Button(("Select##" + std::to_string(windowID)).c_str())) {
+        trySendChange(); 
+    }
     if (enterPressed) { trySendChange(); }
 
     // -------------------------
     // Symbol List
     // -------------------------
-    if (ImGui::BeginChild("symbols", ImVec2(200, 200), true)) {
-        for (const auto& sym : availableSymbols) {
-            if (ImGui::Selectable(sym.c_str())) {
-                strcpy(searchBuf, sym.c_str()); // autofill
+    if (ImGui::BeginChild(("symbols##" + std::to_string(windowID)).c_str(), ImVec2(200, 200), true)) {
+        for (size_t i = 0; i < availableSymbols.size(); ++i) {
+            const auto& sym = availableSymbols[i];
+            if (ImGui::Selectable((sym + "##" + std::to_string(windowID) + "_" + std::to_string(i)).c_str())) {
+                strncpy(searchBuf.data(), sym.c_str(), searchBuf.size() - 1);
+                searchBuf[searchBuf.size() - 1] = '\0';
             }
         }
+        ImGui::EndChild();
     }
-    ImGui::EndChild();
     ImGui::Dummy(ImVec2(0, 15));
-    
-    /*
-    // -------------------------
-    // Live Ticker Decode
-    // -------------------------
-    if (!latestCryptoMessage.empty()) {
-        logger.logInfo("Message successfully received for display.");
-        const Binance::BookTicker* ticker = Binance::GetBookTicker(latestCryptoMessage.data());
-        if (ticker) {
-            auto safe = [](const flatbuffers::String* s) -> double {
-                if (!s || s->str().empty()) return 0.0;
-                try { return std::stod(s->str()); } catch (...) { return 0.0; }
-            };
-
-            const char* symbol = ticker->symbol() ? ticker->symbol()->c_str() : "[null]";
-            logger.logInfo(fmt::format("Displaying ticker for symbol: {}", symbol));
-            double bid = safe(ticker->best_bid());
-            double bidQty = safe(ticker->bid_qty());
-            double ask = safe(ticker->best_ask());
-            double askQty = safe(ticker->ask_qty());
-
-            ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "%s", symbol);
-            ImGui::SameLine();
-            ImGui::Text("Bid: %.4f (%.2f) | Ask: %.4f (%.2f)", bid, bidQty, ask, askQty);
-        } else {
-            ImGui::Text("Invalid FlatBuffer data received.");
-        }
-    } else {
-        ImGui::Text("Waiting for live data...");
-    }
-    */
 
     // -------------------------
     // Live Data Display

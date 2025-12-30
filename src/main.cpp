@@ -153,19 +153,17 @@ int main() {
     logger.logInfo("ZMQ Control Client connected.");
 
     // ------------------ Storage ------------------
-    //std::vector<int> activeWindowIDs; // IDs of currently active windows
-    //activeWindowIDs.reserve(50); // Reserve space for windowIDs (Max of 100 symbols)
-    //activeWindowIDs.emplace_back(0); // Start with window ID 0 active
-
     std::vector<SymbolRequest> pendingRRequests; // Symbols requested by windows
     pendingRRequests.reserve(10); // Reserve space for symbol requests from windows per main loop iteration
 
     // THIS IS ACCESSED BY WINDOW ID
     std::vector<WindowBBO> activeBBOWindows; // Symbols currently being displayed in windows
     activeBBOWindows.reserve(50); // Reserve space for symbols being displayed (Max of 100 symbols)
-    activeBBOWindows.emplace_back(WindowBBO{true, 0, BBO{}}); // Start with window ID 0
+    activeBBOWindows.emplace_back(WindowBBO{true, 0, "", BBO{}}); // Start with window ID 0
 
-    std::vector<uint8_t> latestFlatbufferMessage;
+    // Hold various fb messages depending on symbol
+    std::unordered_map<std::string, std::vector<uint8_t>> latestFlatbufferMessages;
+    latestFlatbufferMessages.reserve(300); // just 300 symbols for now; NASDAQ Basic symbols not included
 
     std::deque<std::vector<uint8_t>> latestKlineMessages;
     std::deque<KlineData> klineDeque;
@@ -185,7 +183,8 @@ int main() {
             for (const SymbolRequest& req : pendingRRequests) {
                 std::string reply;
                 bool ok = controlClient.sendControlRequest(
-                    fmt::format("start_symbol {}", req.requestedSymbol),
+                    //fmt::format("start_symbol {}", req.requestedSymbol),
+                    fmt::format("{} {}", req.requestType, req.requestedSymbol),
                     reply,
                     logger,
                     500
@@ -193,13 +192,30 @@ int main() {
 
                 //BBO bbo = decodeToBBO(latestFlatbufferMessage, logger);
                 // handle activeWindows state
+                if (ok && req.requestType == "close_stream") {
+                    logger.logInfo(fmt::format("[INFO] Closing stream for symbol: {}", req.requestedSymbol));
+                    continue; // No need to update active windows for close requests
+                }
+                
                 if (ok) {
-                    logger.logInfo(fmt::format("[INFO] Start symbol: {}", reply));
-                    activeBBOWindows[req.windowID] = WindowBBO{true, req.windowID, decodeToBBO(latestFlatbufferMessage, logger)}; // verbose/unnecessary
+                    logger.logInfo(fmt::format("[INFO] Start symbol: {}", req.requestedSymbol));
+                    activeBBOWindows[req.windowID] = WindowBBO{
+                        true, 
+                        req.windowID, 
+                        req.requestedSymbol, 
+                        decodeToBBO(latestFlatbufferMessages[req.requestedSymbol], logger)}; // (verbose/unnecessary?)
                 }
                 else {
-                    logger.logInfo("[WARN] Failed to switch symbol.");
-                    activeBBOWindows[req.windowID].currentBBO.error = "Failed to start symbol stream.";
+                    logger.logInfo("[WARN] Failed to execute requesst.");
+                    activeBBOWindows[req.windowID] = WindowBBO{
+                        true, 
+                        req.windowID, 
+                        req.requestedSymbol,
+                        BBO{
+                            .symbol = req.requestedSymbol,
+                            .error = "Failed to handle request."
+                        }
+                    };
                 }
             }
             // All processed, clear pending requests
@@ -208,7 +224,7 @@ int main() {
 
         startImGuiFrame(window);
 
-        float bannerHeight = 45.0f;
+        float bannerHeight = 90.0f; // CHANGE THIS IF BANNER HEIGHT CHANGES
         ImGuiIO io = ImGui::GetIO();
         ImGui::SetNextWindowPos(ImVec2(0, bannerHeight));
         ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y - bannerHeight));
@@ -227,24 +243,46 @@ int main() {
         int width, height; glfwGetWindowSize(window, &width, &height);
 
         // ------------------ Handle BookTicker ------------------
-        std::vector<uint8_t> msg;
+        // NOTE: Pair format:
+        // msg.first = topic (symbol name)
+        // msg.second = payload (flatbuffer data)
+        std::pair<std::string, std::vector<uint8_t>> msg;
         if (bookticker_sub.pop(msg)) {
-            latestFlatbufferMessage = std::move(msg);
-            logger.logInfo("BookTicker msg received, size: " + std::to_string(latestFlatbufferMessage.size()));
+            latestFlatbufferMessages[msg.first] = std::move(msg.second);
         }
-
-        // ------------------ Decode latest BBO for all windows ------------------
+        // Debug dump
+        /*
+        logger.logInfo("LatestFlatbufferMessages after pop:");
+        for (const auto& [symbol, buf] : latestFlatbufferMessages) {
+            logger.logInfo(fmt::format("Symbol: {}, Flatbuffer size: {}", symbol, buf.size()));
+        } */
+        // ------------------ Decode latest BBO for all windows (with failsafe) ------------------
         for (auto& win : activeBBOWindows) {
-            win.currentBBO = decodeToBBO(latestFlatbufferMessage, logger);
+            if (!win.active) continue;
+
+            // Construct the correct key with the prefix
+            std::string key = "bookticker." + win.desiredSymbol;
+            auto it = latestFlatbufferMessages.find(key);
+
+            if (it != latestFlatbufferMessages.end()) {
+                logger.logInfo(fmt::format("Decoding BBO for symbol: {}", win.desiredSymbol));
+                logger.logInfo(fmt::format("Flatbuffer size: {}", it->second.size()));
+                win.currentBBO = decodeToBBO(it->second, logger);
+            } else {
+                win.currentBBO.error = "Waiting for live data....";
+            }
         }
 
         // ------------------ Handle Latency ------------------
-        std::vector<uint8_t> latency_msg;
-        while (latency_sub.pop(latency_msg)) {
+        std::pair<std::string, std::vector<uint8_t>> latency_pair;
+        while (latency_sub.pop(latency_pair)) {
+            const std::vector<uint8_t>& latency_msg = latency_pair.second; // ignore topic
             std::string str_msg(latency_msg.begin(), latency_msg.end());
             auto space_pos = str_msg.find(' ');
-            if (space_pos != std::string::npos) latestLatencyMessage = str_msg.substr(space_pos + 1);
+            if (space_pos != std::string::npos)
+                latestLatencyMessage = str_msg.substr(space_pos + 1);
         }
+
 
         // ------------------ Periodic Historical Klines ------------------
         auto now = std::chrono::steady_clock::now();
@@ -256,10 +294,12 @@ int main() {
         }
 
         // ------------------ Read Kline Messages ------------------
-        std::vector<uint8_t> kline_msg;
-        while (kline_sub.pop(kline_msg)) {
+        std::pair<std::string, std::vector<uint8_t>> kline_pair;
+        while (kline_sub.pop(kline_pair)) {
+            const std::vector<uint8_t>& kline_msg = kline_pair.second; // ignore topic
             const Binance::Klines* fb_klines = Binance::GetKlines(kline_msg.data());
             if (!fb_klines || !fb_klines->klines()) continue;
+
             for (auto kl : *(fb_klines->klines())) {
                 KlineData k;
                 k.open_time  = kl->open_time();
@@ -271,14 +311,16 @@ int main() {
                 k.close_time = kl->close_time();
                 klineDeque.push_back(k);
             }
+
             while (klineDeque.size() > 500) klineDeque.pop_front();
         }
 
         // ------------------ Render UI ------------------
         bool binanceConnected = true;
         bool zmqActive = true;
-        NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage);
+        NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage, activeBBOWindows);
         // dataDisplayWindow(window, width, height, tickDataVector); // TESTING PURPOSES
+        // Orderbook windows
         for (auto& win : activeBBOWindows) {
             if (!win.active) continue;
             orderBookDisplayWindow(window, width, height, symbols, logger, pendingRRequests, activeBBOWindows, win.windowID);
@@ -291,9 +333,22 @@ int main() {
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        /*
+        // -------------------------
+        // Banner is already rendered here (height = 90)
+        // -------------------------
+
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImVec2 dockspacePos = viewport->Pos;
+        ImVec2 dockspaceSize = viewport->Size;
+        dockspacePos.y += 90;          // banner height
+        dockspaceSize.y -= 90;  // adjust for banner */
+
+        // First-frame dock layout
         static bool firstFrame = true;
         if (firstFrame) {
             firstFrame = false;
+
             ImGui::DockBuilderRemoveNode(dockspaceID);
             ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_None);
 
@@ -302,7 +357,6 @@ int main() {
             ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, &dock_id_bottom, &dock_id_top);
 
             ImGui::DockBuilderDockWindow("Chart Display", dock_id_top);
-            // ImGui::DockBuilderDockWindow("Equity Data Display", dock_id_bottom); // TESTING PURPOSES
             ImGui::DockBuilderDockWindow("Orderbook Display", dock_id_right);
             ImGui::DockBuilderFinish(dockspaceID);
         }

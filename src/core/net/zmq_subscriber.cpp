@@ -6,7 +6,7 @@
 namespace Binance {
 
 ZMQSubscriber::ZMQSubscriber(size_t queue_capacity, const std::string& endpoint)
-    : queue_(std::make_unique<boost::lockfree::spsc_queue<std::vector<uint8_t>>>(queue_capacity)),
+    : queue_(std::make_unique<boost::lockfree::spsc_queue<std::pair<std::string, std::vector<uint8_t>>>>(queue_capacity)), // Updated to hold topic and payload
       endpoint_(endpoint),
       context_(1),
       socket_(context_, ZMQ_SUB)
@@ -32,7 +32,7 @@ void ZMQSubscriber::stop() noexcept {
     running_.store(false, std::memory_order_release);
 }
 
-bool ZMQSubscriber::pop(std::vector<uint8_t>& data) {
+bool ZMQSubscriber::pop(std::pair<std::string, std::vector<uint8_t>>& data) {
     return queue_->pop(data);
 }
 
@@ -64,7 +64,9 @@ void ZMQSubscriber::receive_loop() {
                 //fmt::print("[ZMQSubscriber] Received topic: {}\n", topic_str);
 
                 // Push to queue (blocks if full)
-                while (running_ && !queue_->push(std::move(buffer))) {
+                // NOTE: EDIT THIS LATER ON TO DROP OLD MESSAGES IF QUEUE IS FULL
+                std::pair<std::string, std::vector<uint8_t>> item{topic_str, std::move(buffer)};
+                while (running_ && !queue_->push(std::move(item))) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
             }

@@ -26,7 +26,11 @@ BBO decodeToBBO(
             bbo.error = "Invalid FlatBuffer data received.";
         }
     } else {
-        bbo.error = "Waiting for live data...";
+        bbo.error = "No data received yet.";
+        /* logger.logInfo(fmt::format(
+            "No flatbuffer message received yet for symbol '{}'.",
+            win.desiredSymbol
+        )); */
     }
     return bbo;
 }

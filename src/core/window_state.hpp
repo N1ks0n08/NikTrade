@@ -13,5 +13,6 @@ struct SymbolRequest {
 struct WindowBBO {
     bool active = false;        // Is the window active
     int windowID;           // Unique ID of the window
+    std::string desiredSymbol; // The symbol the window desires to view
     BBO currentBBO;      // Current BBO data for the window
 };

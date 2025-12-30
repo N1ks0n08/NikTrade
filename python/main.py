@@ -118,39 +118,60 @@ async def control_server(stream_tasks: list, publisher, latency_publisher, kline
             cmd, symbol = parts
             symbol = symbol.lower()
 
-            if cmd == "start_symbol":
+            if cmd == "start_stream":
                 try:
                     logger.info(f"[INFO] Starting stream to symbol: {symbol}")
 
-                    # Cancel old streams
-                    old_tasks = stream_tasks.copy()
-                    for t in old_tasks:
-                        t.cancel()
-                    stream_tasks.clear()
+                    # Check if symbol already has a running stream
+                    already_running = any(
+                        t.get_name() == symbol for t in stream_tasks
+                    )
 
-                    # Start new stream
-                    new_task = asyncio.create_task(stream_for_symbol(symbol, publisher, latency_publisher))
-                    stream_tasks.append(new_task)
-                    logger.info(f"[INFO] Stream task for {symbol} started")
+                    if not already_running:
+                        task = asyncio.create_task(
+                            stream_for_symbol(symbol, publisher, latency_publisher),
+                            name=symbol
+                        )
+                        stream_tasks.append(task)
+                        logger.info(f"[INFO] Stream task for {symbol} started")
+                    else:
+                        logger.info(f"[INFO] Stream for {symbol} already active")
 
-                    # Respond immediately
                     await socket.send_string("OK")
 
-                    # Cleanup old tasks in background correctly
-                    async def cleanup(tasks):
-                        await asyncio.gather(*tasks, return_exceptions=True)
+                except Exception as e:
+                    logger.exception(f"[ERROR] start_symbol failed for {symbol}: {e}")
+                    await socket.send_string(f"ERROR: {e}")
+                    
+            elif cmd == "close_stream":
+                try:
+                    logger.info(f"[INFO] Closing stream for symbol: {symbol}")
 
-                    asyncio.create_task(cleanup(old_tasks))
-                    logger.info(f"[INFO] switch_symbol for {symbol} completed!!")
+                    task_to_close = None
+                    for t in stream_tasks:
+                        if t.get_name() == symbol:
+                            task_to_close = t
+                            break
+
+                    if task_to_close:
+                        task_to_close.cancel()
+                        stream_tasks.remove(task_to_close)
+
+                        # Ensure proper cleanup without blocking control loop
+                        async def cleanup(t):
+                            await asyncio.gather(t, return_exceptions=True)
+
+                        asyncio.create_task(cleanup(task_to_close))
+
+                        logger.info(f"[INFO] Stream task for {symbol} closed")
+                        await socket.send_string("OK")
+                    else:
+                        logger.info(f"[INFO] No active stream for {symbol}")
+                        await socket.send_string("OK")
 
                 except Exception as e:
-                    logger.exception(f"[ERROR] switch_symbol failed for {symbol}: {e}")
-                    # Only attempt to send error if socket is still usable
-                    try:
-                        await socket.send_string(f"ERROR: {e}")
-                    except zmq.error.ZMQError:
-                        logger.warning("ZMQ socket cannot send error message, skipping")
-
+                    logger.exception(f"[ERROR] close_stream failed for {symbol}: {e}")
+                    await socket.send_string(f"ERROR: {e}")
 
             elif cmd == "fire_klines":
                 try:
@@ -188,10 +209,11 @@ async def main():
     stream_tasks = []
 
     # Start initial streams
+    """ USE LATER FOR TESTING PURPOSES
     for sym in symbols[:2]:
         task = asyncio.create_task(stream_for_symbol(sym, publisher, latency_publisher))
         stream_tasks.append(task)
-
+    """
     # Start control server
     control_task = asyncio.create_task(control_server(stream_tasks, publisher, latency_publisher, klines_publisher))
 
