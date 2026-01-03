@@ -30,7 +30,7 @@ void orderBookDisplayWindow(
     }
 
     // Begin ImGui window with close button support
-    if (!ImGui::Begin("Orderbook Display", &windowOpen, ImGuiWindowFlags_NoCollapse)) {
+    if (!ImGui::Begin(("Orderbook Display##" + std::to_string(windowID)).c_str(), &windowOpen, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();
         return;
     }

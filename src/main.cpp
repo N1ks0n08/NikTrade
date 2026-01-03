@@ -357,7 +357,7 @@ int main() {
             ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, &dock_id_bottom, &dock_id_top);
 
             ImGui::DockBuilderDockWindow("Chart Display", dock_id_top);
-            ImGui::DockBuilderDockWindow("Orderbook Display", dock_id_right);
+            ImGui::DockBuilderDockWindow("Orderbook Display##0", dock_id_right); // always dock the first window
             ImGui::DockBuilderFinish(dockspaceID);
         }
 
