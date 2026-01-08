@@ -1,3 +1,21 @@
+// NikTrade main responsibilities:
+//
+// 1. UI thread:
+//    - GLFW / ImGui lifecycle
+//    - Rendering
+//
+// 2. Control plane:
+//    - ZMQ control requests
+//    - Symbol start/stop
+//    - Python process lifecycle
+//
+// 3. Market data consumption:
+//    - ZMQ SUB sockets
+//    - FlatBuffer decoding
+//    - Snapshot publication
+//
+// Order book ownership will be added later.
+
 #include <vector>
 #include <deque>
 #include <fstream>
