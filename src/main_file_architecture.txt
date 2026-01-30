@@ -1,0 +1,94 @@
+// main.cpp
+// ----------
+// Composition root for the application.
+//
+// Responsibilities:
+// 1. Own all application-lifetime communication primitives:
+//      - Lock-free queues for streaming data or UI intents
+//      - Atomic/RCU snapshots for single-writer/multi-reader shared state
+// 2. Wire together isolated subsystems via dependency injection
+//      - No engine references to other engines
+//      - Communication occurs only via shared primitives
+// 3. Manage subsystem lifecycle:
+//      - initialize() / run() / stop()
+// 4. UIEngine (main.cpp):
+//      - Spawns worker thread (or manages UI loop) for rendering and input
+//      - Reads snapshots from MarketDataEngine and StrategyEngine
+//      - Publishes UI intents to queues for MarketDataEngine or other subsystems
+//
+// Threading Model:
+// ----------------
+// MarketDataEngine:
+//      - Spawns worker thread(s) to process incoming market data ticks
+//      - Updates RCU snapshots and publishes ticks to queues
+//
+// StrategyEngine:
+//      - Spawns worker thread to evaluate market ticks and generate signals
+//      - Publishes strategy outputs to atomic snapshots or queues
+//
+
+//
+// Notes:
+// - Engines do not call each other directly
+// - Queues and snapshots enforce single-writer/multi-reader safety
+// - main() is only responsible for construction, startup, waiting for exit,
+//   and orderly shutdown in reverse order of startup.
+------------------------------------------------------------------
+
+TEMPLATE main() CODE:
+
+int main() {
+    // ------------------------------------------------------------------
+    // Application-lifetime communication primitives
+    // ------------------------------------------------------------------
+
+    auto marketSnapshot = std::make_shared<MarketSnapshotRCU>();
+    auto tickQueue      = std::make_shared<LockFreeQueue<Tick>>();
+    auto uiIntentQueue  = std::make_shared<LockFreeQueue<UIIntent>>();
+    auto signalSnapshot = std::make_shared<SignalSnapshotRCU>();
+
+    // ------------------------------------------------------------------
+    // Subsystem construction (dependency injection)
+    // ------------------------------------------------------------------
+
+    MarketDataEngine market(
+        marketSnapshot,
+        tickQueue,
+        uiIntentQueue
+    );
+
+    StrategyEngine strategy(
+        tickQueue,
+        signalSnapshot
+    );
+
+    UIEngine ui(
+        marketSnapshot,
+        signalSnapshot,
+        uiIntentQueue
+    );
+
+    // ------------------------------------------------------------------
+    // Startup
+    // ------------------------------------------------------------------
+
+    market.run();     // spawns market data thread(s)
+    strategy.run();   // spawns strategy thread
+    ui.run();         // enters UI/render loop (or spawns UI thread)
+
+    // ------------------------------------------------------------------
+    // Application lifetime
+    // ------------------------------------------------------------------
+
+    wait_for_exit();  // signal handler, blocking loop, or window close
+
+    // ------------------------------------------------------------------
+    // Orderly shutdown (reverse order)
+    // ------------------------------------------------------------------
+
+    ui.stop();
+    strategy.stop();
+    market.stop();
+
+    return 0;
+}

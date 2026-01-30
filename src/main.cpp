@@ -95,8 +95,39 @@ void forceClosePorts(FileLogger& logger) {
 #endif
 }
 
+// --------------------------- Global Safety Net ---------------------------
+void globalTerminateHandler() {
+    // 1. Emergency Log Write
+    std::ofstream emergencyLog("NikTrade.log", std::ios::app);
+    if (emergencyLog.is_open()) {
+        emergencyLog << "\n[CRITICAL] System Terminated Abnormally (std::terminate called)\n";
+        emergencyLog.flush();
+        emergencyLog.close();
+    }
+
+    // 2. Visual Alert (Since there's no console)
+#ifdef _WIN32
+    MessageBoxA(
+        NULL, 
+        "NikTrade encountered a fatal internal error and must close.\nCheck NikTrade.log for details.", 
+        "Critical Abort", 
+        MB_ICONHAND | MB_OK | MB_SYSTEMMODAL
+    );
+#endif
+
+    // Note: std::terminate will continue its shutdown sequence after this function returns
+}
+
 // --------------------------- Main ---------------------------
 int main() {
+    // 1. Install the Black Box recorder first
+    std::set_terminate(globalTerminateHandler);
+    // 2. Cross-platform Single Instance Check
+    if (IsAlreadyRunning()) {
+        // Log not needed here, IsAlreadyRunning handles the "Bring to Front" on Windows
+        return 0; 
+    }
+    // 3. Initialize Logger
     // ------------------ Logger ------------------
     // Delete old log BEFORE creating the logger
     if (fs::exists("NikTrade.log")) {
@@ -112,289 +143,305 @@ int main() {
         }
     }
 
+    //Declare the window pointer OUTSIDE so it's "in scope" for the whole function
+    GLFWwindow* window = nullptr;
     FileLogger logger("NikTrade.log");
     logger.logInfo("Starting NikTrade...");
+    // 4. THE GIANT TRY-CATCH
+    try {
+        forceClosePorts(logger);
 
-    forceClosePorts(logger);
+        // ------------------ Window/UI ------------------
+        fs::path exeDir = getExecutableDir();
+        //GLFWwindow* 
+        window = initWindow(1000, 750, "NikTrade", exeDir);
+        if (!window) { logger.logInfo("Failed to initialize window."); return -1; }
+        logger.logInfo("Window initialized successfully.");
 
-    // ------------------ Window/UI ------------------
-    fs::path exeDir = getExecutableDir();
-    GLFWwindow* window = initWindow(1000, 750, "NikTrade", exeDir);
-    if (!window) { logger.logInfo("Failed to initialize window."); return -1; }
-    logger.logInfo("Window initialized successfully.");
+        // ------------------ Python Publisher ------------------
+        fs::path pythonScript = exeDir / "python" / "main.py";
+        std::unique_ptr<NikTrade::PythonLauncher> pythonLauncher;
+        if (!fs::exists(pythonScript)) {
+            logger.logInfo(fmt::format("Python publisher not found at: {}", pythonScript.string()));
+        } else {
+            pythonLauncher = std::make_unique<NikTrade::PythonLauncher>(
+                pythonScript.string(),
+                std::vector<std::string>{},
+                "python"
+            );
+            pythonLauncher->start();
+            std::this_thread::sleep_for(std::chrono::seconds(2)); // allow Python to initialize
+            logger.logInfo("Python publisher started.");
+        }
 
-    // ------------------ Python Publisher ------------------
-    fs::path pythonScript = exeDir / "python" / "main.py";
-    std::unique_ptr<NikTrade::PythonLauncher> pythonLauncher;
-    if (!fs::exists(pythonScript)) {
-        logger.logInfo(fmt::format("Python publisher not found at: {}", pythonScript.string()));
-    } else {
-        pythonLauncher = std::make_unique<NikTrade::PythonLauncher>(
-            pythonScript.string(),
-            std::vector<std::string>{},
-            "python"
-        );
-        pythonLauncher->start();
-        std::this_thread::sleep_for(std::chrono::seconds(2)); // allow Python to initialize
-        logger.logInfo("Python publisher started.");
-    }
+        // ------------------ Load Symbols ------------------
+        std::vector<std::string> symbols;
+        symbols.reserve(14000); // Reserve space for symbols from Binance + NASDAQ Basic securities
+        fs::path symbolsFile = exeDir / "python" / "binance_symbols.json";
+        std::ifstream symbolsStream(symbolsFile);
+        if (!symbolsStream.is_open()) {
+            logger.logInfo(fmt::format("Failed to open symbols file at {}", symbolsFile.string()));
+            return -1;
+        }
+        json symbolsJson; symbolsStream >> symbolsJson;
+        for (const auto& symbol : symbolsJson) symbols.push_back(symbol.get<std::string>());
+        logger.logInfo(fmt::format("Loaded {} symbols.", symbols.size()));
 
-    // ------------------ Load Symbols ------------------
-    std::vector<std::string> symbols;
-    symbols.reserve(14000); // Reserve space for symbols from Binance + NASDAQ Basic securities
-    fs::path symbolsFile = exeDir / "python" / "binance_symbols.json";
-    std::ifstream symbolsStream(symbolsFile);
-    if (!symbolsStream.is_open()) {
-        logger.logInfo(fmt::format("Failed to open symbols file at {}", symbolsFile.string()));
-        return -1;
-    }
-    json symbolsJson; symbolsStream >> symbolsJson;
-    for (const auto& symbol : symbolsJson) symbols.push_back(symbol.get<std::string>());
-    logger.logInfo(fmt::format("Loaded {} symbols.", symbols.size()));
+        /*
+        // ------------------ Load Tick Data ------------------
+        fs::path jsonFile = exeDir / "resources" / "SPY_2025.json";
+        std::ifstream file(jsonFile);
+        if (!file.is_open()) { logger.logInfo(fmt::format("Failed to open JSON file at {}", jsonFile.string())); return -1; }
+        json jsonData; file >> jsonData;
+        std::vector<Tick> tickDataVector = json_to_tickDataVector(jsonData);
+        logger.logInfo(fmt::format("Loaded {} ticks from JSON.", tickDataVector.size()));
+        */
+        // ------------------ ZMQ Subscribers ------------------
+        Binance::ZMQSubscriber bookticker_sub(524288, "tcp://127.0.0.1:5555"); bookticker_sub.start();
+        Binance::ZMQSubscriber kline_sub(262144, "tcp://127.0.0.1:5556"); kline_sub.start();
+        Binance::ZMQSubscriber latency_sub(1024, "tcp://127.0.0.1:5561"); latency_sub.start();
+        logger.logInfo("ZMQ subscribers started.");
 
-    /*
-    // ------------------ Load Tick Data ------------------
-    fs::path jsonFile = exeDir / "resources" / "SPY_2025.json";
-    std::ifstream file(jsonFile);
-    if (!file.is_open()) { logger.logInfo(fmt::format("Failed to open JSON file at {}", jsonFile.string())); return -1; }
-    json jsonData; file >> jsonData;
-    std::vector<Tick> tickDataVector = json_to_tickDataVector(jsonData);
-    logger.logInfo(fmt::format("Loaded {} ticks from JSON.", tickDataVector.size()));
-    */
-    // ------------------ ZMQ Subscribers ------------------
-    Binance::ZMQSubscriber bookticker_sub(524288, "tcp://127.0.0.1:5555"); bookticker_sub.start();
-    Binance::ZMQSubscriber kline_sub(262144, "tcp://127.0.0.1:5556"); kline_sub.start();
-    Binance::ZMQSubscriber latency_sub(1024, "tcp://127.0.0.1:5561"); latency_sub.start();
-    logger.logInfo("ZMQ subscribers started.");
+        ZMQControlClient controlClient("tcp://127.0.0.1:5560");
+        logger.logInfo("ZMQ Control Client connected.");
 
-    ZMQControlClient controlClient("tcp://127.0.0.1:5560");
-    logger.logInfo("ZMQ Control Client connected.");
+        // ------------------ Storage ------------------
+        std::vector<SymbolRequest> pendingRRequests; // Symbols requested by windows
+        pendingRRequests.reserve(10); // Reserve space for symbol requests from windows per main loop iteration
 
-    // ------------------ Storage ------------------
-    std::vector<SymbolRequest> pendingRRequests; // Symbols requested by windows
-    pendingRRequests.reserve(10); // Reserve space for symbol requests from windows per main loop iteration
+        // THIS IS ACCESSED BY WINDOW ID
+        std::vector<WindowBBO> activeBBOWindows; // Symbols currently being displayed in windows
+        activeBBOWindows.reserve(50); // Reserve space for symbols being displayed (Max of 100 symbols)
+        activeBBOWindows.emplace_back(WindowBBO{true, 0, "", BBO{}}); // Start with window ID 0
 
-    // THIS IS ACCESSED BY WINDOW ID
-    std::vector<WindowBBO> activeBBOWindows; // Symbols currently being displayed in windows
-    activeBBOWindows.reserve(50); // Reserve space for symbols being displayed (Max of 100 symbols)
-    activeBBOWindows.emplace_back(WindowBBO{true, 0, "", BBO{}}); // Start with window ID 0
+        // Hold various fb messages depending on symbol
+        std::unordered_map<std::string, std::vector<uint8_t>> latestFlatbufferMessages;
+        latestFlatbufferMessages.reserve(300); // just 300 symbols for now; NASDAQ Basic symbols not included
 
-    // Hold various fb messages depending on symbol
-    std::unordered_map<std::string, std::vector<uint8_t>> latestFlatbufferMessages;
-    latestFlatbufferMessages.reserve(300); // just 300 symbols for now; NASDAQ Basic symbols not included
+        std::deque<std::vector<uint8_t>> latestKlineMessages;
+        std::deque<KlineData> klineDeque;
 
-    std::deque<std::vector<uint8_t>> latestKlineMessages;
-    std::deque<KlineData> klineDeque;
+        std::string latestLatencyMessage = "Latency: Loading...";
 
-    std::string latestLatencyMessage = "Latency: Loading...";
+        std::deque<std::string> currentSymbol;
+        if (!symbols.empty()) currentSymbol.push_back(symbols[0]);
 
-    std::deque<std::string> currentSymbol;
-    if (!symbols.empty()) currentSymbol.push_back(symbols[0]);
+        static auto lastKlineRequest = std::chrono::steady_clock::now();
+        static const std::chrono::seconds requestInterval(5);
 
-    static auto lastKlineRequest = std::chrono::steady_clock::now();
-    static const std::chrono::seconds requestInterval(5);
+        // ------------------ Main Loop ------------------
+        while (!glfwWindowShouldClose(window)) {
+            // Execute any pending symbol requests from windows
+            if (!pendingRRequests.empty()) {
+                for (const SymbolRequest& req : pendingRRequests) {
+                    std::string reply;
+                    bool ok = controlClient.sendControlRequest(
+                        //fmt::format("start_symbol {}", req.requestedSymbol),
+                        fmt::format("{} {}", req.requestType, req.requestedSymbol),
+                        reply,
+                        logger,
+                        500
+                    );
 
-    // ------------------ Main Loop ------------------
-    while (!glfwWindowShouldClose(window)) {
-        // Execute any pending symbol requests from windows
-        if (!pendingRRequests.empty()) {
-            for (const SymbolRequest& req : pendingRRequests) {
+                    //BBO bbo = decodeToBBO(latestFlatbufferMessage, logger);
+                    // handle activeWindows state
+                    if (ok && req.requestType == "close_stream") {
+                        logger.logInfo(fmt::format("[INFO] Closing stream for symbol: {}", req.requestedSymbol));
+                        continue; // No need to update active windows for close requests
+                    }
+                    
+                    if (ok) {
+                        logger.logInfo(fmt::format("[INFO] Start symbol: {}", req.requestedSymbol));
+                        activeBBOWindows[req.windowID] = WindowBBO{
+                            true, 
+                            req.windowID, 
+                            req.requestedSymbol, 
+                            decodeToBBO(latestFlatbufferMessages[req.requestedSymbol], logger)}; // (verbose/unnecessary?)
+                    }
+                    else {
+                        logger.logInfo("[WARN] Failed to execute requesst.");
+                        activeBBOWindows[req.windowID] = WindowBBO{
+                            true, 
+                            req.windowID, 
+                            req.requestedSymbol,
+                            BBO{
+                                .symbol = req.requestedSymbol,
+                                .error = "Failed to handle request."
+                            }
+                        };
+                    }
+                }
+                // All processed, clear pending requests
+                pendingRRequests.clear();
+            }
+
+            startImGuiFrame(window);
+
+            float bannerHeight = 90.0f; // CHANGE THIS IF BANNER HEIGHT CHANGES
+            ImGuiIO io = ImGui::GetIO();
+            ImGui::SetNextWindowPos(ImVec2(0, bannerHeight));
+            ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y - bannerHeight));
+
+            ImGuiWindowFlags dockspaceFlags = ImGuiWindowFlags_NoTitleBar |
+                                            ImGuiWindowFlags_NoCollapse |
+                                            ImGuiWindowFlags_NoResize |
+                                            ImGuiWindowFlags_NoMove |
+                                            ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                            ImGuiWindowFlags_NoBackground;
+            ImGui::Begin("DockSpace_Window", nullptr, dockspaceFlags);
+            ImGuiID dockspaceID = ImGui::GetID("MainDockSpace");
+            ImGui::DockSpace(dockspaceID, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode);
+            ImGui::End();
+
+            int width, height; glfwGetWindowSize(window, &width, &height);
+
+            // ------------------ Handle BookTicker ------------------
+            // NOTE: Pair format:
+            // msg.first = topic (symbol name)
+            // msg.second = payload (flatbuffer data)
+            std::pair<std::string, std::vector<uint8_t>> msg;
+            if (bookticker_sub.pop(msg)) {
+                latestFlatbufferMessages[msg.first] = std::move(msg.second);
+            }
+            // Debug dump
+            /*
+            logger.logInfo("LatestFlatbufferMessages after pop:");
+            for (const auto& [symbol, buf] : latestFlatbufferMessages) {
+                logger.logInfo(fmt::format("Symbol: {}, Flatbuffer size: {}", symbol, buf.size()));
+            } */
+            // ------------------ Decode latest BBO for all windows (with failsafe) ------------------
+            for (auto& win : activeBBOWindows) {
+                if (!win.active) continue;
+
+                // Construct the correct key with the prefix
+                std::string key = "bookticker." + win.desiredSymbol;
+                auto it = latestFlatbufferMessages.find(key);
+
+                if (it != latestFlatbufferMessages.end()) {
+                    logger.logInfo(fmt::format("Decoding BBO for symbol: {}", win.desiredSymbol));
+                    logger.logInfo(fmt::format("Flatbuffer size: {}", it->second.size()));
+                    win.currentBBO = decodeToBBO(it->second, logger);
+                } else {
+                    win.currentBBO.error = "Waiting for live data....";
+                }
+            }
+
+            // ------------------ Handle Latency ------------------
+            std::pair<std::string, std::vector<uint8_t>> latency_pair;
+            while (latency_sub.pop(latency_pair)) {
+                const std::vector<uint8_t>& latency_msg = latency_pair.second; // ignore topic
+                std::string str_msg(latency_msg.begin(), latency_msg.end());
+                auto space_pos = str_msg.find(' ');
+                if (space_pos != std::string::npos)
+                    latestLatencyMessage = str_msg.substr(space_pos + 1);
+            }
+
+
+            // ------------------ Periodic Historical Klines ------------------
+            auto now = std::chrono::steady_clock::now();
+            if (!currentSymbol.empty() && now - lastKlineRequest >= requestInterval) {
+                lastKlineRequest = now;
                 std::string reply;
-                bool ok = controlClient.sendControlRequest(
-                    //fmt::format("start_symbol {}", req.requestedSymbol),
-                    fmt::format("{} {}", req.requestType, req.requestedSymbol),
-                    reply,
-                    logger,
-                    500
-                );
-
-                //BBO bbo = decodeToBBO(latestFlatbufferMessage, logger);
-                // handle activeWindows state
-                if (ok && req.requestType == "close_stream") {
-                    logger.logInfo(fmt::format("[INFO] Closing stream for symbol: {}", req.requestedSymbol));
-                    continue; // No need to update active windows for close requests
-                }
-                
-                if (ok) {
-                    logger.logInfo(fmt::format("[INFO] Start symbol: {}", req.requestedSymbol));
-                    activeBBOWindows[req.windowID] = WindowBBO{
-                        true, 
-                        req.windowID, 
-                        req.requestedSymbol, 
-                        decodeToBBO(latestFlatbufferMessages[req.requestedSymbol], logger)}; // (verbose/unnecessary?)
-                }
-                else {
-                    logger.logInfo("[WARN] Failed to execute requesst.");
-                    activeBBOWindows[req.windowID] = WindowBBO{
-                        true, 
-                        req.windowID, 
-                        req.requestedSymbol,
-                        BBO{
-                            .symbol = req.requestedSymbol,
-                            .error = "Failed to handle request."
-                        }
-                    };
-                }
-            }
-            // All processed, clear pending requests
-            pendingRRequests.clear();
-        }
-
-        startImGuiFrame(window);
-
-        float bannerHeight = 90.0f; // CHANGE THIS IF BANNER HEIGHT CHANGES
-        ImGuiIO io = ImGui::GetIO();
-        ImGui::SetNextWindowPos(ImVec2(0, bannerHeight));
-        ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, io.DisplaySize.y - bannerHeight));
-
-        ImGuiWindowFlags dockspaceFlags = ImGuiWindowFlags_NoTitleBar |
-                                          ImGuiWindowFlags_NoCollapse |
-                                          ImGuiWindowFlags_NoResize |
-                                          ImGuiWindowFlags_NoMove |
-                                          ImGuiWindowFlags_NoBringToFrontOnFocus |
-                                          ImGuiWindowFlags_NoBackground;
-        ImGui::Begin("DockSpace_Window", nullptr, dockspaceFlags);
-        ImGuiID dockspaceID = ImGui::GetID("MainDockSpace");
-        ImGui::DockSpace(dockspaceID, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode);
-        ImGui::End();
-
-        int width, height; glfwGetWindowSize(window, &width, &height);
-
-        // ------------------ Handle BookTicker ------------------
-        // NOTE: Pair format:
-        // msg.first = topic (symbol name)
-        // msg.second = payload (flatbuffer data)
-        std::pair<std::string, std::vector<uint8_t>> msg;
-        if (bookticker_sub.pop(msg)) {
-            latestFlatbufferMessages[msg.first] = std::move(msg.second);
-        }
-        // Debug dump
-        /*
-        logger.logInfo("LatestFlatbufferMessages after pop:");
-        for (const auto& [symbol, buf] : latestFlatbufferMessages) {
-            logger.logInfo(fmt::format("Symbol: {}, Flatbuffer size: {}", symbol, buf.size()));
-        } */
-        // ------------------ Decode latest BBO for all windows (with failsafe) ------------------
-        for (auto& win : activeBBOWindows) {
-            if (!win.active) continue;
-
-            // Construct the correct key with the prefix
-            std::string key = "bookticker." + win.desiredSymbol;
-            auto it = latestFlatbufferMessages.find(key);
-
-            if (it != latestFlatbufferMessages.end()) {
-                logger.logInfo(fmt::format("Decoding BBO for symbol: {}", win.desiredSymbol));
-                logger.logInfo(fmt::format("Flatbuffer size: {}", it->second.size()));
-                win.currentBBO = decodeToBBO(it->second, logger);
-            } else {
-                win.currentBBO.error = "Waiting for live data....";
-            }
-        }
-
-        // ------------------ Handle Latency ------------------
-        std::pair<std::string, std::vector<uint8_t>> latency_pair;
-        while (latency_sub.pop(latency_pair)) {
-            const std::vector<uint8_t>& latency_msg = latency_pair.second; // ignore topic
-            std::string str_msg(latency_msg.begin(), latency_msg.end());
-            auto space_pos = str_msg.find(' ');
-            if (space_pos != std::string::npos)
-                latestLatencyMessage = str_msg.substr(space_pos + 1);
-        }
-
-
-        // ------------------ Periodic Historical Klines ------------------
-        auto now = std::chrono::steady_clock::now();
-        if (!currentSymbol.empty() && now - lastKlineRequest >= requestInterval) {
-            lastKlineRequest = now;
-            std::string reply;
-            bool ok = controlClient.sendControlRequest(fmt::format("fire_klines {}", currentSymbol[0]), reply, logger, 1000);
-            if (!ok) logger.logInfo("[WARN] Historical klines request failed: " + reply);
-        }
-
-        // ------------------ Read Kline Messages ------------------
-        std::pair<std::string, std::vector<uint8_t>> kline_pair;
-        while (kline_sub.pop(kline_pair)) {
-            const std::vector<uint8_t>& kline_msg = kline_pair.second; // ignore topic
-            const Binance::Klines* fb_klines = Binance::GetKlines(kline_msg.data());
-            if (!fb_klines || !fb_klines->klines()) continue;
-
-            for (auto kl : *(fb_klines->klines())) {
-                KlineData k;
-                k.open_time  = kl->open_time();
-                k.open       = std::stod(kl->open_price()->str());
-                k.high       = std::stod(kl->high_price()->str());
-                k.low        = std::stod(kl->low_price()->str());
-                k.close      = std::stod(kl->close_price()->str());
-                k.volume     = std::stod(kl->volume()->str());
-                k.close_time = kl->close_time();
-                klineDeque.push_back(k);
+                bool ok = controlClient.sendControlRequest(fmt::format("fire_klines {}", currentSymbol[0]), reply, logger, 1000);
+                if (!ok) logger.logInfo("[WARN] Historical klines request failed: " + reply);
             }
 
-            while (klineDeque.size() > 500) klineDeque.pop_front();
+            // ------------------ Read Kline Messages ------------------
+            std::pair<std::string, std::vector<uint8_t>> kline_pair;
+            while (kline_sub.pop(kline_pair)) {
+                const std::vector<uint8_t>& kline_msg = kline_pair.second; // ignore topic
+                const Binance::Klines* fb_klines = Binance::GetKlines(kline_msg.data());
+                if (!fb_klines || !fb_klines->klines()) continue;
+
+                for (auto kl : *(fb_klines->klines())) {
+                    KlineData k;
+                    k.open_time  = kl->open_time();
+                    k.open       = std::stod(kl->open_price()->str());
+                    k.high       = std::stod(kl->high_price()->str());
+                    k.low        = std::stod(kl->low_price()->str());
+                    k.close      = std::stod(kl->close_price()->str());
+                    k.volume     = std::stod(kl->volume()->str());
+                    k.close_time = kl->close_time();
+                    klineDeque.push_back(k);
+                }
+
+                while (klineDeque.size() > 500) klineDeque.pop_front();
+            }
+
+            // ------------------ Render UI ------------------
+            bool binanceConnected = true;
+            bool zmqActive = true;
+            NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage, activeBBOWindows);
+            // dataDisplayWindow(window, width, height, tickDataVector); // TESTING PURPOSES
+            // Orderbook windows
+            for (auto& win : activeBBOWindows) {
+                if (!win.active) continue;
+                orderBookDisplayWindow(window, width, height, symbols, logger, pendingRRequests, activeBBOWindows, win.windowID);
+            }
+            chartDisplayWindow(window, width, height, klineDeque);
+
+            int fbWidth, fbHeight;
+            glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+            glViewport(0, 0, fbWidth, fbHeight);
+            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            /*
+            // -------------------------
+            // Banner is already rendered here (height = 90)
+            // -------------------------
+
+            ImGuiViewport* viewport = ImGui::GetMainViewport();
+            ImVec2 dockspacePos = viewport->Pos;
+            ImVec2 dockspaceSize = viewport->Size;
+            dockspacePos.y += 90;          // banner height
+            dockspaceSize.y -= 90;  // adjust for banner */
+
+            // First-frame dock layout
+            static bool firstFrame = true;
+            if (firstFrame) {
+                firstFrame = false;
+
+                ImGui::DockBuilderRemoveNode(dockspaceID);
+                ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_None);
+
+                ImGuiID dock_id_left, dock_id_right, dock_id_top, dock_id_bottom;
+                ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Right, 0.33f, &dock_id_right, &dock_id_left);
+                ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, &dock_id_bottom, &dock_id_top);
+
+                ImGui::DockBuilderDockWindow("Chart Display", dock_id_top);
+                ImGui::DockBuilderDockWindow("Orderbook Display##0", dock_id_right); // always dock the first window
+                ImGui::DockBuilderFinish(dockspaceID);
+            }
+
+            endImGuiFrame();
+            glfwSwapBuffers(window);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
 
-        // ------------------ Render UI ------------------
-        bool binanceConnected = true;
-        bool zmqActive = true;
-        NikTrade::bannerWindow(binanceConnected, zmqActive, latestLatencyMessage, activeBBOWindows);
-        // dataDisplayWindow(window, width, height, tickDataVector); // TESTING PURPOSES
-        // Orderbook windows
-        for (auto& win : activeBBOWindows) {
-            if (!win.active) continue;
-            orderBookDisplayWindow(window, width, height, symbols, logger, pendingRRequests, activeBBOWindows, win.windowID);
-        }
-        chartDisplayWindow(window, width, height, klineDeque);
-
-        int fbWidth, fbHeight;
-        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
-        glViewport(0, 0, fbWidth, fbHeight);
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        /*
-        // -------------------------
-        // Banner is already rendered here (height = 90)
-        // -------------------------
-
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImVec2 dockspacePos = viewport->Pos;
-        ImVec2 dockspaceSize = viewport->Size;
-        dockspacePos.y += 90;          // banner height
-        dockspaceSize.y -= 90;  // adjust for banner */
-
-        // First-frame dock layout
-        static bool firstFrame = true;
-        if (firstFrame) {
-            firstFrame = false;
-
-            ImGui::DockBuilderRemoveNode(dockspaceID);
-            ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_None);
-
-            ImGuiID dock_id_left, dock_id_right, dock_id_top, dock_id_bottom;
-            ImGui::DockBuilderSplitNode(dockspaceID, ImGuiDir_Right, 0.33f, &dock_id_right, &dock_id_left);
-            ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.5f, &dock_id_bottom, &dock_id_top);
-
-            ImGui::DockBuilderDockWindow("Chart Display", dock_id_top);
-            ImGui::DockBuilderDockWindow("Orderbook Display##0", dock_id_right); // always dock the first window
-            ImGui::DockBuilderFinish(dockspaceID);
-        }
-
-        endImGuiFrame();
-        glfwSwapBuffers(window);
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // ------------------ Cleanup ------------------
+        bookticker_sub.stop();
+        kline_sub.stop();
+        latency_sub.stop();
+        if (pythonLauncher) pythonLauncher->stop();
+    } catch (const std::exception& e) {
+        // This catches everything: ZMQ errors, out_of_range, filesystem errors
+        logger.logInfo(fmt::format("[FATAL] Unhandled Exception: {}", e.what()));
+        
+        // On Windows, show a message box so you don't miss the crash
+        #ifdef _WIN32
+        MessageBoxA(NULL, e.what(), "NikTrade Fatal Error", MB_ICONERROR | MB_OK);
+        #endif
+        
+        return -1; // Exit with error code
     }
-
-    // ------------------ Cleanup ------------------
-    bookticker_sub.stop();
-    kline_sub.stop();
-    latency_sub.stop();
-    if (pythonLauncher) pythonLauncher->stop();
     forceClosePorts(logger);
     shutdownUI(window);
 
     logger.logInfo("Application terminated cleanly.");
     return 0;
 }
+
 
 #ifdef _WIN32
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) { return main(); }

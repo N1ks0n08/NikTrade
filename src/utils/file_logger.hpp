@@ -14,3 +14,6 @@ private:
     std::ofstream logFile_;
     std::mutex mutex_;
 };
+
+// Cross-platform single instance check
+bool IsAlreadyRunning();
